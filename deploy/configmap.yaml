@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: akash-guard-config
+  namespace: kube-system
+data:
+  config.yaml: |
+    threatintel:
+      refresh_interval: 1h
+      feeds:
+        - https://feodotracker.abuse.ch/downloads/ipblocklist.txt
+        - https://www.spamhaus.org/drop/drop.txt
+        - https://www.spamhaus.org/drop/edrop.txt
+
+    anomaly:
+      window: 10s
+      thresholds:
+        pps: 10000
+        unique_dst_ips: 500
+        port25_connections: 20
+        syn_rate: 1000
+
+    alerting:
+      prometheus:
+        enabled: true
+        port: 9090
+      webhook:
+        enabled: false
+        url: ""
+      email:
+        enabled: false
+        smtp_host: ""
+        smtp_port: 587
+        from: ""
+        to: []
+
+    namespaces:
+      whitelist: []

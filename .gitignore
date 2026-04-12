@@ -1,0 +1,4 @@
+bin/
+bpf/tc_egress_bpf*.go
+bpf/tc_egress_bpf*.o
+local.mk

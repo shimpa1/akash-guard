@@ -1,0 +1,36 @@
+threatintel:
+  refresh_interval: 1h
+  feeds:
+    - https://feodotracker.abuse.ch/downloads/ipblocklist.txt
+    - https://www.spamhaus.org/drop/drop.txt
+    - https://www.spamhaus.org/drop/edrop.txt
+
+anomaly:
+  window: 10s
+  thresholds:
+    pps: 10000
+    unique_dst_ips: 500
+    port25_connections: 20
+    syn_rate: 1000
+
+alerting:
+  prometheus:
+    enabled: true
+    port: 9090
+  webhook:
+    enabled: true
+    url: https://hooks.example.com/akash-guard
+  email:
+    enabled: true
+    smtp_host: smtp.example.com
+    smtp_port: 587
+    username: alerts@example.com
+    password: changeme
+    from: akash-guard@example.com
+    to:
+      - provider-admin@example.com
+
+namespaces:
+  whitelist:
+    - kube-system
+    - calico-system
