@@ -8,6 +8,7 @@
 #include <linux/bpf.h>
 #include <linux/if_ether.h>
 #include <linux/ip.h>
+#include <linux/in.h>
 #include <linux/tcp.h>
 #include <linux/udp.h>
 #include <linux/pkt_cls.h>
@@ -102,7 +103,7 @@ int tc_egress(struct __sk_buff *skb)
         dst_port = bpf_ntohs(udph->dest);
     }
 
-emit:
+emit:;
     // Emit event to ring buffer for unique-dst-IP tracking in userspace.
     struct pkt_event *ev = bpf_ringbuf_reserve(&events, sizeof(*ev), 0);
     if (ev) {
