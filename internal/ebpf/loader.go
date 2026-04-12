@@ -3,6 +3,7 @@ package ebpf
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -254,7 +255,8 @@ func (m *Monitor) Snapshot() []*IfaceStats {
 		cp.UniqueDstIPs = dstCopy
 
 		if m.objs != nil {
-			if err := mergeCounters(m.objs.Counters, s.Ifindex, &cp); err != nil {
+			if err := mergeCounters(m.objs.Counters, s.Ifindex, &cp); err != nil &&
+				!errors.Is(err, ebpf.ErrKeyNotExist) {
 				slog.Warn("merge counters", "ifindex", s.Ifindex, "err", err)
 			}
 		}
