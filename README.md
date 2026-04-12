@@ -4,6 +4,17 @@ A standalone provider add-on for [Akash Network](https://akash.network) that det
 
 Akash is a permissionless marketplace. Providers bear the consequences of abusive deployments: IP reputation damage, ISP blacklisting, uplink saturation, and potential legal exposure. `akash-guard` gives providers visibility and alerting without interfering with the decentralized, permissionless nature of the network. It never automatically kills a lease.
 
+**Image**: `shimpa/akash-guard:latest` (Docker Hub)
+
+---
+
+## Component Status
+
+| Component | Status |
+|---|---|
+| Threat Intel Blocker | Working — tested on live provider |
+| eBPF Anomaly Detector | In progress — eBPF loader wiring pending |
+
 ---
 
 ## How It Works
@@ -55,13 +66,13 @@ Provider Node (DaemonSet — one pod per node)
 │   ├── IP deduplicator
 │   └── Calico GlobalNetworkPolicy writer (Log + Deny rules)
 │
-├── eBPF Monitor
+├── eBPF Monitor  [in progress]
 │   ├── TC egress hook (C, attached to each pod veth)
 │   ├── Per-CPU hash map — packet/SYN/port25 counters per ifindex
 │   ├── Ring buffer — per-packet dst IP events
 │   └── Veth watcher — polls /sys/class/net every 5s, auto-attaches/detaches
 │
-├── Anomaly Detector
+├── Anomaly Detector  [in progress]
 │   └── Window evaluator — reads snapshots, fires alerts, resets counters
 │
 └── Alerting Layer
@@ -81,24 +92,51 @@ Provider Node (DaemonSet — one pod per node)
 - `CAP_BPF`, `CAP_NET_ADMIN`, `CAP_PERFMON`, `CAP_SYS_RESOURCE` available to the DaemonSet pod
 
 ### Development machine (any OS)
-- Go ≥ 1.24
+- Go ≥ 1.26
 - SSH access to a Linux build VM
 - `rsync`
 
-### Linux build VM (for eBPF code generation only)
+### Linux build VM (for eBPF code generation and Docker builds)
 - `clang` and `llvm`
 - `libbpf-dev`
-- `linux-headers` matching the kernel (or the amd64 headers package)
-- Go ≥ 1.24
+- `gcc-multilib` (provides `asm/types.h` required by the eBPF C compiler)
+- `linux-headers-amd64`
+- Go ≥ 1.26
+- Docker
 
 Install on Debian/Ubuntu:
 ```bash
-apt-get install -y clang llvm libbpf-dev linux-headers-$(uname -r) golang-go
+apt-get install -y clang llvm libbpf-dev gcc-multilib linux-headers-amd64
+# Install Go from https://go.dev/dl/ — do not use the distro package, it is too old
 ```
 
 ---
 
-## Getting Started
+## Quick Deploy (pre-built image)
+
+The fastest path to a running instance:
+
+```bash
+kubectl apply -f https://raw.githubusercontent.com/shimpa1/akash-guard/main/deploy/rbac.yaml
+kubectl apply -f https://raw.githubusercontent.com/shimpa1/akash-guard/main/deploy/configmap.yaml
+kubectl apply -f https://raw.githubusercontent.com/shimpa1/akash-guard/main/deploy/daemonset.yaml
+```
+
+Verify:
+```bash
+kubectl -n kube-system get pods -l app=akash-guard
+kubectl -n kube-system logs -l app=akash-guard
+```
+
+On a healthy deployment you should see within ~10 seconds:
+```json
+{"level":"INFO","msg":"threat intel feeds fetched","total_entries":1596}
+{"level":"INFO","msg":"created Calico GlobalNetworkPolicy","name":"akash-guard-threatintel-egress-deny","entries":1596}
+```
+
+---
+
+## Getting Started (building from source)
 
 ### 1. Clone the repository
 
@@ -124,7 +162,7 @@ DEV_VM = 192.168.1.100
 
 ### 3. Generate eBPF Go bindings
 
-This step compiles `bpf/tc_egress.c` into BPF bytecode and generates the Go bindings. It runs on the Linux build VM over SSH and pulls the results back. Only needed once, and again whenever `tc_egress.c` changes.
+Compiles `bpf/tc_egress.c` into BPF bytecode and generates the Go bindings on the build VM over SSH, then pulls the results back. Run once, and again whenever `tc_egress.c` changes.
 
 ```bash
 make generate
@@ -132,25 +170,20 @@ make generate
 
 ### 4. Build the binary
 
-Cross-compiles a `linux/amd64` binary locally. No VM needed after `generate`.
+Cross-compiles a `linux/amd64` binary locally using Go's native cross-compilation. No VM needed after `generate`.
 
 ```bash
 make build
 # output: bin/akash-guard
 ```
 
-### 5. Build the container image
+### 5. Build and push the container image
 
-Builds the full Docker image on the Linux VM (requires Docker installed there):
-
-```bash
-make docker IMAGE=ghcr.io/yourorg/akash-guard TAG=v0.1.0
-```
-
-### 6. Push the image
+The Docker build runs on the build VM (requires Docker installed there). The Dockerfile runs `go generate` internally, so the VM needs `clang`, `llvm`, `libbpf-dev`, and `gcc-multilib`.
 
 ```bash
-make push IMAGE=ghcr.io/yourorg/akash-guard TAG=v0.1.0
+make docker IMAGE=youruser/akash-guard TAG=v0.1.0
+make push  IMAGE=youruser/akash-guard TAG=v0.1.0
 ```
 
 ---
@@ -159,11 +192,7 @@ make push IMAGE=ghcr.io/yourorg/akash-guard TAG=v0.1.0
 
 `akash-guard` reads its configuration from a YAML file. The default path is `/etc/akash-guard/config.yaml`, overridable via the `AKASH_GUARD_CONFIG` environment variable.
 
-Copy `config.yaml.example` as a starting point:
-
-```bash
-cp config.yaml.example config.yaml
-```
+Edit `deploy/configmap.yaml` for in-cluster deployments, or copy `config.yaml.example` for standalone use.
 
 ### Full reference
 
@@ -231,15 +260,7 @@ namespaces:
 
 ## Deployment
 
-### 1. Update the ConfigMap
-
-Edit `deploy/configmap.yaml` with your desired thresholds and alert destinations, then apply:
-
-```bash
-kubectl apply -f deploy/configmap.yaml
-```
-
-### 2. Apply RBAC
+### 1. Apply RBAC
 
 Creates a `ServiceAccount`, `ClusterRole`, and `ClusterRoleBinding` in `kube-system`:
 
@@ -251,9 +272,15 @@ The ClusterRole grants:
 - `get/list/watch` on `nodes` and `pods` (for veth → namespace/pod resolution)
 - `get/list/watch/create/update/patch/delete` on Calico `GlobalNetworkPolicy` CRDs
 
-### 3. Deploy the DaemonSet
+### 2. Configure and apply the ConfigMap
 
-Update the image reference in `deploy/daemonset.yaml` if you pushed to a custom registry, then:
+Edit `deploy/configmap.yaml` with your desired thresholds and alert destinations, then apply:
+
+```bash
+kubectl apply -f deploy/configmap.yaml
+```
+
+### 3. Deploy the DaemonSet
 
 ```bash
 kubectl apply -f deploy/daemonset.yaml
@@ -271,18 +298,11 @@ kubectl -n kube-system get pods -l app=akash-guard
 kubectl -n kube-system logs -l app=akash-guard -f
 ```
 
-Logs are structured JSON. Example threat intel hit:
+Logs are structured JSON. Example threat intel policy creation:
 
 ```json
-{
-  "time": "2026-04-12T10:23:45Z",
-  "level": "WARN",
-  "msg": "abuse detected",
-  "type": "threat_intel_hit",
-  "namespace": "t8k3m2-deployment-web",
-  "dst_ip": "185.220.101.5",
-  "feed_source": "https://feodotracker.abuse.ch/downloads/ipblocklist.txt"
-}
+{"level":"INFO","msg":"threat intel feeds fetched","total_entries":1596}
+{"level":"INFO","msg":"created Calico GlobalNetworkPolicy","name":"akash-guard-threatintel-egress-deny","entries":1596}
 ```
 
 ---
@@ -344,29 +364,36 @@ All channels (webhook, email, log) use the same JSON structure:
 
 After deploying to a test provider, run through these checks:
 
-**Threat Intel**
+**Threat Intel — policy creation**
 ```bash
-# Pick any IP from the Spamhaus DROP list and attempt to reach it from a test pod.
-# Confirm the Calico policy was created:
 kubectl get globalnetworkpolicy akash-guard-threatintel-egress-deny
-# Confirm a log line appears in akash-guard pod logs for the hit.
+kubectl get globalnetworkpolicy akash-guard-threatintel-egress-deny \
+  -o jsonpath='{.metadata.annotations}'
+```
+Expected: policy exists, `akash-guard/entry-count` annotation shows ~1596 entries.
+
+**Threat Intel — egress block**
+```bash
+# From inside a test pod, attempt to reach an IP on the Spamhaus DROP list.
+# The connection should be dropped and a log line should appear:
+kubectl -n kube-system logs -l app=akash-guard | grep threat_intel_hit
 ```
 
-**High PPS / DDoS signal**
+**High PPS / DDoS signal** _(requires eBPF monitor — in progress)_
 ```bash
 # From inside a test pod:
 hping3 --flood 1.2.3.4
-# Within one window period, confirm high_pps alert fires in logs.
+# Confirm high_pps alert fires in logs within one window period.
 ```
 
-**Spam signal**
+**Spam signal** _(requires eBPF monitor — in progress)_
 ```bash
-# From inside a test pod, open 25+ TCP connections to port 25:
+# From inside a test pod:
 for i in $(seq 1 30); do nc -z -w1 1.2.3.4 25 & done
 # Confirm port25_egress alert fires.
 ```
 
-**Scan signal**
+**Scan signal** _(requires eBPF monitor — in progress)_
 ```bash
 # From inside a test pod:
 nmap -sS 1.2.3.0/24
@@ -375,9 +402,8 @@ nmap -sS 1.2.3.0/24
 
 **Whitelist**
 ```bash
-# Add kube-system to the whitelist in config.yaml and redeploy.
-# Generate the same traffic from a kube-system pod.
-# Confirm no alerts fire.
+# Add the namespace to the whitelist in deploy/configmap.yaml and redeploy.
+# Generate the same traffic — confirm no alerts fire.
 ```
 
 ---
@@ -410,7 +436,7 @@ akash-guard/
 │       └── engine.go        # Periodic refresh loop
 ├── config.yaml.example      # Fully commented configuration reference
 ├── local.mk.example         # Developer-local build VM config (copy to local.mk)
-├── Dockerfile               # Multi-stage build (eBPF generation + Go binary)
+├── Dockerfile               # Multi-stage build: go generate + go build
 ├── Makefile                 # Build targets: generate, build, docker, push, clean
 └── .gitignore
 ```
@@ -439,6 +465,7 @@ make generate DEV_USER=ubuntu
 
 ## Limitations and Known Issues
 
+- **eBPF monitor not yet active**: The anomaly detector (PPS, scanning, spam signals) is implemented but the eBPF loader is not yet wired to the bpf2go-generated types. The threat intel blocker is fully functional.
 - **IPv4 only**: The eBPF hook currently tracks IPv4 egress only. IPv6 support is planned.
 - **veth resolution**: Namespace/pod name resolution from veth interfaces is best-effort. In some CNI configurations the mapping may fall back to `unknown`.
 - **Threat intel feeds**: Spamhaus feeds may require a paid subscription for high-volume or commercial use. See their [terms of service](https://www.spamhaus.org/organization/dnsblusage/).
