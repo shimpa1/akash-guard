@@ -125,7 +125,7 @@ func (m *Monitor) syncVeths(ctx context.Context) {
 
 	active := make(map[uint32]struct{})
 	for _, iface := range ifaces {
-		if !strings.HasPrefix(iface.Name, "veth") {
+		if !strings.HasPrefix(iface.Name, "veth") && !strings.HasPrefix(iface.Name, "cali") {
 			continue
 		}
 		idx := uint32(iface.Index)
