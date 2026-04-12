@@ -78,7 +78,7 @@ All alert paths (`log`, `Prometheus`, `webhook`, `email`) use the `alerting.Even
 
 ## Test Provider
 
-A single-node test Akash provider is available at `45.154.99.69` (provider URI: `provider.europlots.net`). SSH as `root`. Calico is the CNI. Use this for end-to-end testing — it is not a production provider.
+A single-node test Akash provider is available for end-to-end testing. SSH as `root`. Calico is the CNI. It is not a production provider.
 
 ## Akash Blockchain
 
