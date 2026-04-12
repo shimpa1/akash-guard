@@ -13,7 +13,7 @@ Akash is a permissionless marketplace. Providers bear the consequences of abusiv
 | Component | Status |
 |---|---|
 | Threat Intel Blocker | Working — tested on live provider |
-| eBPF Anomaly Detector | In progress — eBPF loader wiring pending |
+| eBPF Anomaly Detector | Code complete — end-to-end test pending |
 
 ---
 
@@ -66,13 +66,13 @@ Provider Node (DaemonSet — one pod per node)
 │   ├── IP deduplicator
 │   └── Calico GlobalNetworkPolicy writer (Log + Deny rules)
 │
-├── eBPF Monitor  [in progress]
+├── eBPF Monitor
 │   ├── TC egress hook (C, attached to each pod veth)
 │   ├── Per-CPU hash map — packet/SYN/port25 counters per ifindex
 │   ├── Ring buffer — per-packet dst IP events
 │   └── Veth watcher — polls /sys/class/net every 5s, auto-attaches/detaches
 │
-├── Anomaly Detector  [in progress]
+├── Anomaly Detector
 │   └── Window evaluator — reads snapshots, fires alerts, resets counters
 │
 └── Alerting Layer
@@ -379,21 +379,21 @@ Expected: policy exists, `akash-guard/entry-count` annotation shows ~1596 entrie
 kubectl -n kube-system logs -l app=akash-guard | grep threat_intel_hit
 ```
 
-**High PPS / DDoS signal** _(requires eBPF monitor — in progress)_
+**High PPS / DDoS signal** _(requires eBPF monitor — end-to-end test pending)_
 ```bash
 # From inside a test pod:
 hping3 --flood 1.2.3.4
 # Confirm high_pps alert fires in logs within one window period.
 ```
 
-**Spam signal** _(requires eBPF monitor — in progress)_
+**Spam signal** _(requires eBPF monitor — end-to-end test pending)_
 ```bash
 # From inside a test pod:
 for i in $(seq 1 30); do nc -z -w1 1.2.3.4 25 & done
 # Confirm port25_egress alert fires.
 ```
 
-**Scan signal** _(requires eBPF monitor — in progress)_
+**Scan signal** _(requires eBPF monitor — end-to-end test pending)_
 ```bash
 # From inside a test pod:
 nmap -sS 1.2.3.0/24
@@ -465,7 +465,9 @@ make generate DEV_USER=ubuntu
 
 ## Limitations and Known Issues
 
-- **eBPF monitor not yet active**: The anomaly detector (PPS, scanning, spam signals) is implemented but the eBPF loader is not yet wired to the bpf2go-generated types. The threat intel blocker is fully functional.
+- **eBPF monitor end-to-end test pending**: The anomaly detector code and eBPF loader are complete and wired. End-to-end testing on the provider is in progress. The threat intel blocker is fully functional.
+- **`kernel.unprivileged_bpf_disabled=2`**: Akash provider nodes restrict BPF to root. The DaemonSet must run as uid 0 with `privileged: true`. The published image uses the distroless root variant.
+- **`AttachTCX` requires kernel ≥ 6.6**: If the provider node runs an older kernel, TC hook attachment will fail. Legacy `tc filter` attachment can be substituted in `loader.go`.
 - **IPv4 only**: The eBPF hook currently tracks IPv4 egress only. IPv6 support is planned.
 - **veth resolution**: Namespace/pod name resolution from veth interfaces is best-effort. In some CNI configurations the mapping may fall back to `unknown`.
 - **Threat intel feeds**: Spamhaus feeds may require a paid subscription for high-volume or commercial use. See their [terms of service](https://www.spamhaus.org/organization/dnsblusage/).
