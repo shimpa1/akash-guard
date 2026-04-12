@@ -20,7 +20,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     -o /akash-guard ./cmd/akash-guard
 
 # Stage 2: minimal runtime image
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian12
 
 COPY --from=builder /akash-guard /akash-guard
 

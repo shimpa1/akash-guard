@@ -45,6 +45,7 @@ spec:
               readOnly: true
           securityContext:
             privileged: true
+            runAsUser: 0
           resources:
             requests:
               cpu: 50m
