@@ -1,8 +1,8 @@
 # Stage 1: build eBPF C program and Go binary
-FROM --platform=linux/amd64 golang:1.24-bookworm AS builder
+FROM golang:1.26-bookworm AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    clang llvm libbpf-dev linux-headers-amd64 \
+    clang llvm libbpf-dev linux-headers-amd64 gcc-multilib \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
