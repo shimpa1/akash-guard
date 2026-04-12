@@ -44,13 +44,7 @@ spec:
               mountPath: /var/run/netns
               readOnly: true
           securityContext:
-            privileged: false
-            capabilities:
-              add:
-                - BPF
-                - NET_ADMIN
-                - PERFMON
-                - SYS_RESOURCE
+            privileged: true
           resources:
             requests:
               cpu: 50m
