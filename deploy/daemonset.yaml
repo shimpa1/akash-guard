@@ -28,7 +28,7 @@ spec:
           effect: NoExecute
       containers:
         - name: akash-guard
-          image: ghcr.io/shimpa1/akash-guard:latest
+          image: shimpa/akash-guard:latest
           imagePullPolicy: Always
           env:
             - name: AKASH_GUARD_CONFIG
