@@ -57,7 +57,7 @@ func main() {
 	go tiEngine.Run(ctx)
 
 	// Component 2: eBPF Anomaly Detector.
-	monitor := ebpfmon.NewMonitor()
+	monitor := ebpfmon.NewMonitor(dynClient)
 	if err := monitor.Load(); err != nil {
 		slog.Warn("eBPF monitor load failed — anomaly detection disabled", "err", err)
 	} else {
