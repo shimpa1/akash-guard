@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
-	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,8 +18,15 @@ import (
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
 	"github.com/cilium/ebpf/rlimit"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
+
 	bpfpkg "github.com/shimpa1/akash-guard/bpf"
 )
+
+var podGVR = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
 
 // PktEvent mirrors the C struct pkt_event from tc_egress.c.
 type PktEvent struct {
@@ -57,13 +64,15 @@ type Monitor struct {
 	stats     map[uint32]*IfaceStats // keyed by ifindex
 	links     map[uint32]link.Link
 	ifaceInfo map[uint32]ifaceMeta
+	dynClient dynamic.Interface // may be nil; used for pod resolution
 }
 
-func NewMonitor() *Monitor {
+func NewMonitor(dynClient dynamic.Interface) *Monitor {
 	return &Monitor{
 		stats:     make(map[uint32]*IfaceStats),
 		links:     make(map[uint32]link.Link),
 		ifaceInfo: make(map[uint32]ifaceMeta),
+		dynClient: dynClient,
 	}
 }
 
@@ -132,26 +141,34 @@ func (m *Monitor) syncVeths(ctx context.Context) {
 		idx := uint32(iface.Index)
 		active[idx] = struct{}{}
 
-		m.mu.Lock()
-		if _, exists := m.links[idx]; !exists {
-			meta := m.resolveIfaceMeta(iface.Name)
-			m.ifaceInfo[idx] = meta
-			m.stats[idx] = &IfaceStats{
-				Ifindex:      idx,
-				Namespace:    meta.namespace,
-				PodName:      meta.podName,
-				UniqueDstIPs: make(map[uint32]struct{}),
-			}
-			if m.objs != nil {
-				if err := m.attachTC(ctx, iface, idx); err != nil {
-					slog.Warn("attach TC failed", "iface", iface.Name, "err", err)
-				} else {
-					slog.Info("attached TC egress hook", "iface", iface.Name,
-						"ifindex", idx, "namespace", meta.namespace, "pod", meta.podName)
+		m.mu.RLock()
+		_, exists := m.links[idx]
+		m.mu.RUnlock()
+
+		if !exists {
+			// Resolve outside the lock — k8s API call can be slow.
+			meta := m.resolveIfaceMeta(ctx, iface.Name)
+
+			m.mu.Lock()
+			if _, exists := m.links[idx]; !exists { // double-check after lock
+				m.ifaceInfo[idx] = meta
+				m.stats[idx] = &IfaceStats{
+					Ifindex:      idx,
+					Namespace:    meta.namespace,
+					PodName:      meta.podName,
+					UniqueDstIPs: make(map[uint32]struct{}),
+				}
+				if m.objs != nil {
+					if err := m.attachTC(ctx, iface, idx); err != nil {
+						slog.Warn("attach TC failed", "iface", iface.Name, "err", err)
+					} else {
+						slog.Info("attached TC egress hook", "iface", iface.Name,
+							"ifindex", idx, "namespace", meta.namespace, "pod", meta.podName)
+					}
 				}
 			}
+			m.mu.Unlock()
 		}
-		m.mu.Unlock()
 	}
 
 	m.mu.Lock()
@@ -179,24 +196,82 @@ func (m *Monitor) attachTC(_ context.Context, iface net.Interface, idx uint32) e
 	return nil
 }
 
-// resolveIfaceMeta attempts to resolve namespace and pod name for a veth.
-// Falls back to "unknown" if not resolvable.
-func (m *Monitor) resolveIfaceMeta(ifaceName string) ifaceMeta {
-	netnsDir := "/var/run/netns"
-	entries, err := os.ReadDir(netnsDir)
-	if err != nil {
-		return ifaceMeta{namespace: "unknown", podName: ifaceName}
+// resolveIfaceMeta maps a Calico/veth interface to its pod's namespace and name.
+//
+// Strategy: Calico installs a /32 host route for each pod through its cali interface.
+// We read /proc/net/route to build a map of pod IP → interface name, then cross-reference
+// with the k8s pod list to find the namespace and pod name.
+func (m *Monitor) resolveIfaceMeta(ctx context.Context, ifaceName string) ifaceMeta {
+	fallback := ifaceMeta{namespace: "unknown", podName: ifaceName}
+	if m.dynClient == nil {
+		return fallback
 	}
-	for _, e := range entries {
-		parts := strings.SplitN(e.Name(), "_", 2)
-		if len(parts) == 2 {
-			_, err := os.Readlink(filepath.Join(netnsDir, e.Name()))
-			if err != nil {
-				continue
-			}
+
+	// Build map: little-endian IP uint32 → interface name, from /32 host routes.
+	routeIdx, err := buildHostRouteIndex()
+	if err != nil {
+		slog.Warn("resolveIfaceMeta: read /proc/net/route", "err", err)
+		return fallback
+	}
+
+	// List all pods across all namespaces.
+	podList, err := m.dynClient.Resource(podGVR).Namespace("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		slog.Warn("resolveIfaceMeta: list pods", "err", err)
+		return fallback
+	}
+
+	for i := range podList.Items {
+		pod := &podList.Items[i]
+		podIP, _, _ := unstructured.NestedString(pod.Object, "status", "podIP")
+		if podIP == "" {
+			continue
+		}
+		ip := net.ParseIP(podIP).To4()
+		if ip == nil {
+			continue
+		}
+		// /proc/net/route stores addresses as native-endian uint32.
+		// On x86 (little-endian), binary.LittleEndian.Uint32 of the network-order
+		// IP bytes gives us the value that appears in the route table.
+		leKey := binary.LittleEndian.Uint32(ip)
+		if routeIdx[leKey] == ifaceName {
+			ns, _, _ := unstructured.NestedString(pod.Object, "metadata", "namespace")
+			name, _, _ := unstructured.NestedString(pod.Object, "metadata", "name")
+			return ifaceMeta{namespace: ns, podName: name}
 		}
 	}
-	return ifaceMeta{namespace: "unknown", podName: ifaceName}
+
+	return fallback
+}
+
+// buildHostRouteIndex reads /proc/net/route and returns a map of
+// native-endian IP uint32 → interface name for /32 host routes only.
+func buildHostRouteIndex() (map[uint32]string, error) {
+	data, err := os.ReadFile("/proc/net/route")
+	if err != nil {
+		return nil, err
+	}
+	idx := make(map[uint32]string)
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines[1:] { // skip header
+		fields := strings.Fields(line)
+		if len(fields) < 8 {
+			continue
+		}
+		dest, err := strconv.ParseUint(fields[1], 16, 32)
+		if err != nil {
+			continue
+		}
+		mask, err := strconv.ParseUint(fields[7], 16, 32)
+		if err != nil {
+			continue
+		}
+		if mask == 0xFFFFFFFF { // /32 host route
+			idx[uint32(dest)] = fields[0]
+		}
+	}
+	return idx, nil
 }
 
 // consumeRingBuf reads packet events from the eBPF ring buffer and
