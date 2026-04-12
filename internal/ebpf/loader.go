@@ -87,7 +87,9 @@ func (m *Monitor) Close() {
 		l.Close()
 	}
 	if m.objs != nil {
-		m.objs.Close()
+		if err := m.objs.Close(); err != nil {
+			slog.Warn("close eBPF objects", "err", err)
+		}
 	}
 }
 
@@ -277,24 +279,17 @@ func (m *Monitor) ResetWindow() {
 	}
 }
 
-// pktCounters mirrors the C struct pkt_counters from tc_egress.c.
-type pktCounters struct {
-	Packets     uint64
-	Bytes       uint64
-	SYNPackets  uint64
-	Port25Conns uint64
-}
-
 // mergeCounters reads a PERCPU_HASH entry and sums values across all CPUs.
+// Uses the bpf2go-generated TcEgressPktCounters type to match the kernel struct layout.
 func mergeCounters(m *ebpf.Map, ifindex uint32, s *IfaceStats) error {
-	var perCPU []pktCounters
+	var perCPU []bpfpkg.TcEgressPktCounters
 	if err := m.Lookup(ifindex, &perCPU); err != nil {
 		return err
 	}
 	for _, c := range perCPU {
 		s.Packets += c.Packets
 		s.Bytes += c.Bytes
-		s.SYNPackets += c.SYNPackets
+		s.SYNPackets += c.SynPackets
 		s.Port25Conns += c.Port25Conns
 	}
 	return nil
