@@ -19,8 +19,8 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: akash-guard
-      hostNetwork: false
-      hostPID: false
+      hostNetwork: true
+      hostPID: true
       tolerations:
         - operator: Exists
           effect: NoSchedule
