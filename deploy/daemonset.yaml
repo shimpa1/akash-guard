@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: akash-guard
+  namespace: kube-system
+  labels:
+    app: akash-guard
+spec:
+  selector:
+    matchLabels:
+      app: akash-guard
+  template:
+    metadata:
+      labels:
+        app: akash-guard
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: akash-guard
+      hostNetwork: false
+      hostPID: false
+      tolerations:
+        - operator: Exists
+          effect: NoSchedule
+        - operator: Exists
+          effect: NoExecute
+      containers:
+        - name: akash-guard
+          image: ghcr.io/shimpa1/akash-guard:latest
+          imagePullPolicy: Always
+          env:
+            - name: AKASH_GUARD_CONFIG
+              value: /etc/akash-guard/config.yaml
+          volumeMounts:
+            - name: config
+              mountPath: /etc/akash-guard
+              readOnly: true
+            - name: sys
+              mountPath: /sys
+              readOnly: true
+            - name: netns
+              mountPath: /var/run/netns
+              readOnly: true
+          securityContext:
+            privileged: false
+            capabilities:
+              add:
+                - BPF
+                - NET_ADMIN
+                - PERFMON
+                - SYS_RESOURCE
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          ports:
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9090
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 9090
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: akash-guard-config
+        - name: sys
+          hostPath:
+            path: /sys
+        - name: netns
+          hostPath:
+            path: /var/run/netns

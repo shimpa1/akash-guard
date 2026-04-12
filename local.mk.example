@@ -1,0 +1,9 @@
+# Copy this file to local.mk and fill in your values.
+# local.mk is gitignored — never commit it.
+
+# IP or hostname of a Linux machine with clang, llvm, libbpf-dev,
+# linux-headers, and Go installed. Used for eBPF code generation only.
+DEV_VM =
+
+# Optional: override the SSH user (defaults to your local $USER)
+# DEV_USER = myuser
