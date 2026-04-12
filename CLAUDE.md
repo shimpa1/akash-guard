@@ -45,9 +45,14 @@ The published image is `shimpa/akash-guard:latest` on Docker Hub. The Dockerfile
 | Component | Status |
 |---|---|
 | Threat Intel Blocker | Working — tested on live provider |
-| eBPF Anomaly Detector | In progress — loader not yet wired to generated types |
+| eBPF Anomaly Detector | Code complete — pending end-to-end test with root container fix |
 
-The eBPF monitor (`internal/ebpf/loader.go`) currently contains stub code and a placeholder warning. The `loadTcEgressObjects` call and `link.AttachTCX` attachment are commented out pending the wiring work. Once `go generate ./bpf/` has been run, the generated types (`TcEgressObjects`, `loadTcEgressObjects`, etc.) become available and the stubs must be replaced.
+The eBPF monitor (`internal/ebpf/loader.go`) is fully wired to the bpf2go-generated types (`TcEgressObjects`, `LoadTcEgressObjects`). The DaemonSet runs as root (`runAsUser: 0`, `privileged: true`). Pending: confirm TC hooks attach on the test provider after PR #7 is merged and the image is redeployed.
+
+### Known deployment constraints
+
+- **`kernel.unprivileged_bpf_disabled=2`** on Akash provider nodes: BPF syscalls require root. The container must run as uid 0. Use the distroless root variant (`gcr.io/distroless/static-debian12`, not `nonroot`) and set `runAsUser: 0`.
+- **`AttachTCX`** requires Linux kernel ≥ 6.6. Fall back to `link.AttachTC` (legacy `tc filter` approach) on older kernels if needed.
 
 ## Code Structure
 
@@ -73,7 +78,7 @@ All alert paths (`log`, `Prometheus`, `webhook`, `email`) use the `alerting.Even
 
 ## Test Provider
 
-A single-node test Akash provider is available at `45.154.99.69` (provider URI: `provider.europlots.net`). SSH as `root`. Calico is the CNI. Use this for end-to-end testing — it is not a production provider.
+A single-node test Akash provider is available for end-to-end testing. SSH as `root`. Calico is the CNI. It is not a production provider.
 
 ## Akash Blockchain
 
