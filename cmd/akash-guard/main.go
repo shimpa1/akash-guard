@@ -21,7 +21,7 @@ import (
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
+		Level: slog.LevelDebug,
 	})))
 
 	cfgPath := os.Getenv("AKASH_GUARD_CONFIG")
