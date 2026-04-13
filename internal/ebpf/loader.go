@@ -184,10 +184,13 @@ func (m *Monitor) syncVeths(ctx context.Context) {
 }
 
 func (m *Monitor) attachTC(_ context.Context, iface net.Interface, idx uint32) error {
+	// Attach to ingress on the host-side cali interface: when a pod sends a packet,
+	// it appears as ingress on the host-side veth. TCXEgress captures host→pod traffic
+	// (responses), not pod-originated traffic — the wrong direction for abuse detection.
 	l, err := link.AttachTCX(link.TCXOptions{
 		Interface: iface.Index,
 		Program:   m.objs.TcEgress,
-		Attach:    ebpf.AttachTCXEgress,
+		Attach:    ebpf.AttachTCXIngress,
 	})
 	if err != nil {
 		return fmt.Errorf("AttachTCX on %s: %w", iface.Name, err)
@@ -221,7 +224,6 @@ func (m *Monitor) resolveIfaceMeta(ctx context.Context, ifaceName string) ifaceM
 		return fallback
 	}
 
-	slog.Debug("resolveIfaceMeta lookup", "iface", ifaceName, "routes", len(routeIdx), "pods", len(podList.Items))
 	for i := range podList.Items {
 		pod := &podList.Items[i]
 		podIP, _, _ := unstructured.NestedString(pod.Object, "status", "podIP")
@@ -236,7 +238,6 @@ func (m *Monitor) resolveIfaceMeta(ctx context.Context, ifaceName string) ifaceM
 		// On x86 (little-endian), binary.LittleEndian.Uint32 of the network-order
 		// IP bytes gives us the value that appears in the route table.
 		leKey := binary.LittleEndian.Uint32(ip)
-		slog.Debug("resolveIfaceMeta candidate", "iface", ifaceName, "podIP", podIP, "leKey", fmt.Sprintf("%08X", leKey), "routeIface", routeIdx[leKey])
 		if routeIdx[leKey] == ifaceName {
 			ns, _, _ := unstructured.NestedString(pod.Object, "metadata", "namespace")
 			name, _, _ := unstructured.NestedString(pod.Object, "metadata", "name")
@@ -244,7 +245,6 @@ func (m *Monitor) resolveIfaceMeta(ctx context.Context, ifaceName string) ifaceM
 		}
 	}
 
-	slog.Warn("resolveIfaceMeta: no match found", "iface", ifaceName, "routeIdx", fmt.Sprintf("%v", routeIdx))
 	return fallback
 }
 
