@@ -184,10 +184,13 @@ func (m *Monitor) syncVeths(ctx context.Context) {
 }
 
 func (m *Monitor) attachTC(_ context.Context, iface net.Interface, idx uint32) error {
+	// Attach to ingress on the host-side cali interface: when a pod sends a packet,
+	// it appears as ingress on the host-side veth. TCXEgress captures host→pod traffic
+	// (responses), not pod-originated traffic — the wrong direction for abuse detection.
 	l, err := link.AttachTCX(link.TCXOptions{
 		Interface: iface.Index,
 		Program:   m.objs.TcEgress,
-		Attach:    ebpf.AttachTCXEgress,
+		Attach:    ebpf.AttachTCXIngress,
 	})
 	if err != nil {
 		return fmt.Errorf("AttachTCX on %s: %w", iface.Name, err)
