@@ -1,0 +1,35 @@
+# Let's Encrypt ClusterIssuers — HTTP-01 challenge via ingress-nginx.
+# Apply after cert-manager is running: kubectl apply -f cluster-issuer.yaml
+#
+# Use staging for testing (avoids LE rate limits), prod for real certs.
+
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: admin@europlots.net
+    privateKeySecretRef:
+      name: letsencrypt-staging-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: akash-ingress-class
+
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: admin@europlots.net
+    privateKeySecretRef:
+      name: letsencrypt-prod-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: akash-ingress-class
