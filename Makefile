@@ -9,7 +9,7 @@ PLATFORM  ?= linux/amd64
 DEV_USER   ?= $(USER)
 REMOTE_DIR := /tmp/akash-guard-bpf
 
-.PHONY: all generate build docker push clean logging-deploy _require-dev-vm
+.PHONY: all generate build docker push clean logging-deploy cert-manager-deploy _require-dev-vm
 
 all: generate build
 
@@ -37,7 +37,12 @@ docker: _require-dev-vm
 push: _require-dev-vm
 	ssh $(DEV_USER)@$(DEV_VM) "docker push $(IMAGE):$(TAG)"
 
+## cert-manager-deploy: install cert-manager and Let's Encrypt ClusterIssuers.
+cert-manager-deploy:
+	bash deploy/cert-manager/install.sh
+
 ## logging-deploy: deploy Loki + Fluent Bit + Grafana to the current kubectl context.
+## Requires cert-manager-deploy to have run first for TLS to work.
 logging-deploy:
 	bash deploy/logging/install.sh
 
