@@ -45,14 +45,15 @@ The published image is `shimpa/akash-guard:latest` on Docker Hub. The Dockerfile
 | Component | Status |
 |---|---|
 | Threat Intel Blocker | Working — tested on live provider |
-| eBPF Anomaly Detector | Code complete — pending end-to-end test with root container fix |
-
-The eBPF monitor (`internal/ebpf/loader.go`) is fully wired to the bpf2go-generated types (`TcEgressObjects`, `LoadTcEgressObjects`). The DaemonSet runs as root (`runAsUser: 0`, `privileged: true`). Pending: confirm TC hooks attach on the test provider after PR #7 is merged and the image is redeployed.
+| eBPF Anomaly Detector | Working — all 4 signals tested on live provider |
 
 ### Known deployment constraints
 
 - **`kernel.unprivileged_bpf_disabled=2`** on Akash provider nodes: BPF syscalls require root. The container must run as uid 0. Use the distroless root variant (`gcr.io/distroless/static-debian12`, not `nonroot`) and set `runAsUser: 0`.
 - **`AttachTCX`** requires Linux kernel ≥ 6.6. Fall back to `link.AttachTC` (legacy `tc filter` approach) on older kernels if needed.
+- **TC hook direction**: hooks attach as `AttachTCXIngress` on host-side cali interfaces. From the host's perspective, traffic the pod sends appears as *ingress* on the cali interface. `AttachTCXEgress` would capture host→pod responses instead — the wrong direction for abuse detection.
+- **Calico interface naming**: Calico names host-side pod veth interfaces `cali<hash>`, not `veth<hash>`. The veth watcher matches both `cali*` and `veth*` prefixes for compatibility with other CNIs.
+- **Interface resolution race**: if a pod's IP has not yet appeared in the k8s API when its cali interface is first seen, the interface is recorded as `unknown` and re-resolved on the next 5-second watcher tick.
 
 ## Code Structure
 
