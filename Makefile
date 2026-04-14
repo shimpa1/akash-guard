@@ -9,7 +9,7 @@ PLATFORM  ?= linux/amd64
 DEV_USER   ?= $(USER)
 REMOTE_DIR := /tmp/akash-guard-bpf
 
-.PHONY: all generate build docker push clean _require-dev-vm
+.PHONY: all generate build docker push clean logging-deploy _require-dev-vm
 
 all: generate build
 
@@ -36,6 +36,10 @@ docker: _require-dev-vm
 ## push: push the container image (run from dev VM after docker target)
 push: _require-dev-vm
 	ssh $(DEV_USER)@$(DEV_VM) "docker push $(IMAGE):$(TAG)"
+
+## logging-deploy: deploy Loki + Fluent Bit + Grafana to the current kubectl context.
+logging-deploy:
+	bash deploy/logging/install.sh
 
 clean:
 	rm -rf bin/
