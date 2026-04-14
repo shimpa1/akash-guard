@@ -89,7 +89,12 @@ func (pm *PolicyManager) Sync(ctx context.Context, entries []Entry) error {
 	return nil
 }
 
-// buildDenyRules chunks CIDRs into separate deny rules with log action.
+// buildDenyRules chunks CIDRs into separate deny rules with log action,
+// then appends a final Allow rule for all other traffic.
+//
+// The final Allow is required when the Calico tier has defaultAction: Deny
+// (common on hardened Akash provider nodes). Without it, traffic to any IP
+// not on the blocklist would also be denied by the tier's default action.
 func buildDenyRules(entries []Entry) []interface{} {
 	var rules []interface{}
 	for i := 0; i < len(entries); i += cidrChunkSize {
@@ -119,6 +124,12 @@ func buildDenyRules(entries []Entry) []interface{} {
 			},
 		})
 	}
+
+	// Final catch-all: allow all other egress so that non-blocklist traffic
+	// is not dropped by the tier's defaultAction: Deny.
+	rules = append(rules, map[string]interface{}{
+		"action": "Allow",
+	})
 	return rules
 }
 
