@@ -54,6 +54,7 @@ type IfaceStats struct {
 type ifaceMeta struct {
 	namespace string
 	podName   string
+	ifaceName string // retained for deferred resolution retry
 }
 
 // Monitor loads the TC eBPF program, attaches it to pod veth interfaces,
@@ -148,6 +149,7 @@ func (m *Monitor) syncVeths(ctx context.Context) {
 		if !exists {
 			// Resolve outside the lock — k8s API call can be slow.
 			meta := m.resolveIfaceMeta(ctx, iface.Name)
+			meta.ifaceName = iface.Name
 
 			m.mu.Lock()
 			if _, exists := m.links[idx]; !exists { // double-check after lock
@@ -169,6 +171,42 @@ func (m *Monitor) syncVeths(ctx context.Context) {
 			}
 			m.mu.Unlock()
 		}
+	}
+
+	// Retry resolution for any interfaces that were recorded as "unknown" on a
+	// prior tick (pod IP was not yet in the k8s API when the cali interface first
+	// appeared). Collect candidates under RLock, resolve outside the lock, then
+	// update under Lock so the ring-buffer consumer always sees consistent state.
+	type retryCandidate struct {
+		idx       uint32
+		ifaceName string
+	}
+	var retries []retryCandidate
+	m.mu.RLock()
+	for idx, meta := range m.ifaceInfo {
+		if meta.namespace == "unknown" {
+			retries = append(retries, retryCandidate{idx: idx, ifaceName: meta.ifaceName})
+		}
+	}
+	m.mu.RUnlock()
+
+	for _, r := range retries {
+		meta := m.resolveIfaceMeta(ctx, r.ifaceName)
+		if meta.namespace == "unknown" {
+			continue
+		}
+		meta.ifaceName = r.ifaceName
+		m.mu.Lock()
+		if existing, ok := m.ifaceInfo[r.idx]; ok && existing.namespace == "unknown" {
+			m.ifaceInfo[r.idx] = meta
+			if s, ok := m.stats[r.idx]; ok {
+				s.Namespace = meta.namespace
+				s.PodName = meta.podName
+			}
+			slog.Info("resolved TC hook iface", "iface", r.ifaceName,
+				"ifindex", r.idx, "namespace", meta.namespace, "pod", meta.podName)
+		}
+		m.mu.Unlock()
 	}
 
 	m.mu.Lock()
