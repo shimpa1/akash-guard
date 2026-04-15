@@ -3,13 +3,14 @@
 # Chart: grafana/grafana
 # Tested version: 8.4.1
 #
-# Access: https://grafana.europlots.net  (admin / see adminPassword below)
-# Change adminPassword before deploying to a non-test environment.
+# Before deploying:
+#   1. Replace GRAFANA_HOSTNAME below with your actual domain.
+#   2. Set a strong adminPassword.
 #
 # Prerequisites: cert-manager installed with letsencrypt-prod ClusterIssuer.
 #   Run: bash deploy/cert-manager/install.sh
 
-adminPassword: akash-guard
+adminPassword: changeme   # CHANGE THIS
 
 service:
   type: ClusterIP
@@ -22,11 +23,11 @@ ingress:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
   hosts:
-    - grafana.europlots.net
+    - grafana.your-domain.example.com
   tls:
     - secretName: grafana-tls
       hosts:
-        - grafana.europlots.net
+        - grafana.your-domain.example.com
 
 # Pre-provision Loki as the default datasource
 datasources:
@@ -356,5 +357,5 @@ grafana.ini:
   analytics:
     check_for_updates: false
   server:
-    root_url: "https://grafana.europlots.net"
-    domain: grafana.europlots.net
+    root_url: "https://grafana.your-domain.example.com"
+    domain: grafana.your-domain.example.com
