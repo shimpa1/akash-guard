@@ -3,6 +3,7 @@ package ebpf
 import (
 	"context"
 	"log/slog"
+	"regexp"
 	"time"
 
 	"github.com/shimpa1/akash-guard/internal/alerting"
@@ -12,27 +13,37 @@ import (
 // AnomalyDetector reads snapshots from the Monitor on each window tick,
 // evaluates thresholds, fires alerts, then resets the window.
 type AnomalyDetector struct {
-	monitor   *Monitor
-	cfg       *config.AnomalyConfig
-	alerter   *alerting.Alerter
-	whitelist map[string]struct{}
+	monitor        *Monitor
+	cfg            *config.AnomalyConfig
+	alerter        *alerting.Alerter
+	whitelist      map[string]struct{}
+	monitorPattern *regexp.Regexp // if non-nil, only alert on matching namespaces
 }
 
 func NewAnomalyDetector(
 	monitor *Monitor,
 	cfg *config.AnomalyConfig,
 	alerter *alerting.Alerter,
-	whitelist []string,
+	nsCfg config.NamespacesConfig,
 ) *AnomalyDetector {
-	wl := make(map[string]struct{}, len(whitelist))
-	for _, ns := range whitelist {
+	wl := make(map[string]struct{}, len(nsCfg.Whitelist))
+	for _, ns := range nsCfg.Whitelist {
 		wl[ns] = struct{}{}
 	}
+	var pat *regexp.Regexp
+	if nsCfg.MonitorPattern != "" {
+		var err error
+		pat, err = regexp.Compile(nsCfg.MonitorPattern)
+		if err != nil {
+			slog.Error("invalid monitor_pattern, ignoring", "pattern", nsCfg.MonitorPattern, "err", err)
+		}
+	}
 	return &AnomalyDetector{
-		monitor:   monitor,
-		cfg:       cfg,
-		alerter:   alerter,
-		whitelist: wl,
+		monitor:        monitor,
+		cfg:            cfg,
+		alerter:        alerter,
+		whitelist:      wl,
+		monitorPattern: pat,
 	}
 }
 
@@ -56,6 +67,9 @@ func (d *AnomalyDetector) evaluate() {
 	t := d.cfg.Thresholds
 
 	for _, s := range snapshots {
+		if d.monitorPattern != nil && !d.monitorPattern.MatchString(s.Namespace) {
+			continue
+		}
 		if _, whitelisted := d.whitelist[s.Namespace]; whitelisted {
 			continue
 		}

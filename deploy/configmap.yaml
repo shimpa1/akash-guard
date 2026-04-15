@@ -36,4 +36,7 @@ data:
         to: []
 
     namespaces:
+      # Only alert on Akash workload namespaces (45-char lowercase alphanumeric).
+      # Leave empty to monitor all namespaces (use whitelist to exclude specific ones).
+      monitor_pattern: "^[a-z0-9]{45}$"
       whitelist: []
