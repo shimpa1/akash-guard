@@ -33,6 +33,14 @@ spec:
           env:
             - name: AKASH_GUARD_CONFIG
               value: /etc/akash-guard/config.yaml
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
           volumeMounts:
             - name: config
               mountPath: /etc/akash-guard
