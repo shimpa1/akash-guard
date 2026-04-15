@@ -1,0 +1,531 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: akash-guard-dashboard
+  # Deploy to the same namespace as Grafana (typically monitoring for kube-prometheus-stack)
+  namespace: monitoring
+  labels:
+    # kube-prometheus-stack's grafana-sc-dashboard sidecar watches for this label
+    # and hot-loads the dashboard into Grafana without a pod restart.
+    grafana_dashboard: "1"
+data:
+  akash-guard.json: |
+    {
+      "annotations": {
+        "list": []
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "links": [],
+      "panels": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "h": 9,
+            "w": 24,
+            "x": 0,
+            "y": 0
+          },
+          "id": 1,
+          "options": {
+            "dedupStrategy": "none",
+            "enableLogDetails": true,
+            "prettifyLogMessage": true,
+            "showCommonLabels": false,
+            "showLabels": true,
+            "showTime": true,
+            "sortOrder": "Descending",
+            "wrapLogMessage": false
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "${datasource}"
+              },
+              "expr": "{k8s_label_app=\"akash-guard\"} | json | msg=\"abuse detected\"",
+              "queryType": "range",
+              "refId": "A"
+            }
+          ],
+          "title": "Abuse Alerts",
+          "type": "logs"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 9
+          },
+          "id": 2,
+          "options": {
+            "legend": {
+              "calcs": [
+                "sum"
+              ],
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "${datasource}"
+              },
+              "expr": "sum by (type) (count_over_time({k8s_label_app=\"akash-guard\"} | json | msg=\"abuse detected\" [$__interval]))",
+              "queryType": "range",
+              "legendFormat": "{{type}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Alerts by Type",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 9
+          },
+          "id": 3,
+          "options": {
+            "legend": {
+              "calcs": [
+                "sum"
+              ],
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "${datasource}"
+              },
+              "expr": "sum by (k8s_namespace_name) (count_over_time({k8s_label_app=\"akash-guard\"} | json | msg=\"abuse detected\" [$__interval]))",
+              "queryType": "range",
+              "legendFormat": "{{k8s_namespace_name}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Alerts by Namespace",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 10
+                  }
+                ]
+              },
+              "mappings": [],
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 4,
+            "x": 0,
+            "y": 17
+          },
+          "id": 4,
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "sum"
+              ]
+            },
+            "orientation": "auto",
+            "textMode": "auto",
+            "colorMode": "background"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(count_over_time({k8s_label_app=\"akash-guard\"} | json | msg=\"abuse detected\" | type=\"high_pps\" [$__range]))",
+              "queryType": "range",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "title": "High PPS",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 10
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 4,
+            "x": 4,
+            "y": 17
+          },
+          "id": 5,
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "sum"
+              ]
+            },
+            "orientation": "auto",
+            "textMode": "auto",
+            "colorMode": "background"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(count_over_time({k8s_label_app=\"akash-guard\"} | json | msg=\"abuse detected\" | type=\"high_syn_rate\" [$__range]))",
+              "queryType": "range",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "title": "High SYN Rate",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 10
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 4,
+            "x": 8,
+            "y": 17
+          },
+          "id": 6,
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "sum"
+              ]
+            },
+            "orientation": "auto",
+            "textMode": "auto",
+            "colorMode": "background"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(count_over_time({k8s_label_app=\"akash-guard\"} | json | msg=\"abuse detected\" | type=\"high_unique_dst_ips\" [$__range]))",
+              "queryType": "range",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "title": "High Unique DST IPs",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 10
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 4,
+            "x": 12,
+            "y": 17
+          },
+          "id": 7,
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "sum"
+              ]
+            },
+            "orientation": "auto",
+            "textMode": "auto",
+            "colorMode": "background"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(count_over_time({k8s_label_app=\"akash-guard\"} | json | msg=\"abuse detected\" | type=\"port25_egress\" [$__range]))",
+              "queryType": "range",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "title": "Port 25 Egress",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 10
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 4,
+            "x": 16,
+            "y": 17
+          },
+          "id": 8,
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "sum"
+              ]
+            },
+            "orientation": "auto",
+            "textMode": "auto",
+            "colorMode": "background"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(count_over_time({k8s_label_app=\"akash-guard\"} | json | msg=\"abuse detected\" | type=\"threat_intel_hit\" [$__range]))",
+              "queryType": "range",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "title": "Threat Intel Hits",
+          "type": "stat"
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 38,
+      "tags": [
+        "akash-guard"
+      ],
+      "templating": {
+        "list": [
+          {
+            "current": {},
+            "hide": 0,
+            "includeAll": false,
+            "label": "Datasource",
+            "multi": false,
+            "name": "datasource",
+            "options": [],
+            "query": "loki",
+            "refresh": 1,
+            "type": "datasource"
+          },
+          {
+            "current": {
+              "selected": false,
+              "text": "All",
+              "value": "$__all"
+            },
+            "datasource": {
+              "type": "loki",
+              "uid": "${datasource}"
+            },
+            "definition": "label_values({k8s_label_app=\"akash-guard\"}, k8s_namespace_name)",
+            "hide": 0,
+            "includeAll": true,
+            "label": "Namespace",
+            "multi": true,
+            "name": "namespace_filter",
+            "options": [],
+            "query": "label_values({k8s_label_app=\"akash-guard\"}, k8s_namespace_name)",
+            "refresh": 2,
+            "sort": 1,
+            "type": "query"
+          }
+        ]
+      },
+      "time": {
+        "from": "now-6h",
+        "to": "now"
+      },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "akash-guard \u2014 Abuse Detection",
+      "uid": "akash-guard-main",
+      "version": 1
+    }

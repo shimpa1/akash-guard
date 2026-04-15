@@ -91,11 +91,26 @@ A full observability stack is available in `deploy/logging/`:
 
 Grafana is exposed at `https://grafana.europlots.net` (admin / akash-guard) via ingress-nginx + cert-manager Let's Encrypt TLS.
 
-Deploy order:
+Deploy order — standalone Grafana:
 ```bash
 make cert-manager-deploy   # installs cert-manager + ClusterIssuers (run once)
 make logging-deploy        # installs Loki + Fluent Bit + Grafana
 ```
+
+Deploy order — existing kube-prometheus-stack Grafana (production clusters):
+```bash
+# First deploy Loki + Fluent Bit only (skip the standalone Grafana Helm chart):
+bash deploy/logging/install.sh   # or make logging-deploy
+
+# Then inject datasource + dashboard into the existing Grafana:
+make grafana-integration-deploy
+```
+
+The `deploy/logging/grafana-integration/` directory contains two ConfigMaps applied to the `monitoring` namespace:
+- `loki-datasource.yaml` — labeled `grafana_datasource=1`; picked up by the `grafana-sc-datasources` sidecar
+- `dashboard.yaml` — labeled `grafana_dashboard=1`; picked up by the `grafana-sc-dashboard` sidecar
+
+Both sidecars are included in kube-prometheus-stack by default and hot-reload without a Grafana restart.
 
 Loki label names used by Fluent Bit: `k8s_namespace_name`, `k8s_pod_name`, `k8s_label_app`, `job`.
 Grafana dashboard stream selector: `{k8s_label_app="akash-guard"} | json | msg="abuse detected"`.

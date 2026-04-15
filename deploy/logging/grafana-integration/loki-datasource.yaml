@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: akash-guard-loki-datasource
+  # Deploy to the same namespace as Grafana (typically monitoring for kube-prometheus-stack)
+  namespace: monitoring
+  labels:
+    # kube-prometheus-stack's grafana-sc-datasources sidecar watches for this label
+    # and hot-reloads the datasource into Grafana without a pod restart.
+    grafana_datasource: "1"
+data:
+  loki-datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Loki
+        type: loki
+        access: proxy
+        url: http://loki.logging.svc.cluster.local:3100
+        isDefault: false
+        jsonData:
+          maxLines: 5000
