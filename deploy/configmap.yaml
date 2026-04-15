@@ -19,6 +19,7 @@ data:
         unique_dst_ips: 500
         port25_connections: 20
         syn_rate: 1000
+        min_packet_bytes: 300
 
     alerting:
       prometheus:

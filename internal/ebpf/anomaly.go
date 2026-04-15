@@ -66,9 +66,19 @@ func (d *AnomalyDetector) evaluate() {
 		}
 		pps := s.Packets / windowSec
 
-		if pps > t.PPS {
+		// high_pps is only suspicious when packets are small (flood/amplification traffic).
+		// Legitimate bulk transfers (downloads, backups) send large packets near MTU and
+		// can easily exceed 10k pps at gigabit speeds — those should not fire.
+		// If MinPacketBytes == 0, skip the size guard (backward compat with old configs).
+		avgPktBytes := uint64(0)
+		if s.Packets > 0 {
+			avgPktBytes = s.Bytes / s.Packets
+		}
+		smallPackets := t.MinPacketBytes == 0 || avgPktBytes < t.MinPacketBytes
+		if pps > t.PPS && smallPackets {
 			slog.Warn("anomaly: high PPS", "namespace", s.Namespace, "pod", s.PodName,
-				"pps", pps, "threshold", t.PPS)
+				"pps", pps, "threshold", t.PPS,
+				"avg_pkt_bytes", avgPktBytes, "min_pkt_bytes", t.MinPacketBytes)
 			d.alerter.Fire(alerting.Event{
 				Type:      alerting.EventHighPPS,
 				Namespace: s.Namespace,
