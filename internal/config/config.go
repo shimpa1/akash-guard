@@ -26,10 +26,11 @@ type AnomalyConfig struct {
 }
 
 type ThresholdConfig struct {
-	PPS              uint64 `yaml:"pps"`
-	UniqueDstIPs     uint64 `yaml:"unique_dst_ips"`
-	Port25Conns      uint64 `yaml:"port25_connections"`
-	SYNRate          uint64 `yaml:"syn_rate"`
+	PPS            uint64 `yaml:"pps"`
+	UniqueDstIPs   uint64 `yaml:"unique_dst_ips"`
+	Port25Conns    uint64 `yaml:"port25_connections"`
+	SYNRate        uint64 `yaml:"syn_rate"`
+	MinPacketBytes uint64 `yaml:"min_packet_bytes"` // high_pps only fires when avg packet size is below this
 }
 
 type AlertingConfig struct {
@@ -103,10 +104,11 @@ func defaults() *Config {
 		Anomaly: AnomalyConfig{
 			Window: duration{10 * time.Second},
 			Thresholds: ThresholdConfig{
-				PPS:          10000,
-				UniqueDstIPs: 500,
-				Port25Conns:  20,
-				SYNRate:      1000,
+				PPS:            10000,
+				UniqueDstIPs:   500,
+				Port25Conns:    20,
+				SYNRate:        1000,
+				MinPacketBytes: 300,
 			},
 		},
 		Alerting: AlertingConfig{
