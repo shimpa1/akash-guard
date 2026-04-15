@@ -62,7 +62,7 @@ func main() {
 		slog.Warn("eBPF monitor load failed — anomaly detection disabled", "err", err)
 	} else {
 		go monitor.Run(ctx)
-		detector := ebpfmon.NewAnomalyDetector(monitor, &cfg.Anomaly, alerter, cfg.Namespaces.Whitelist)
+		detector := ebpfmon.NewAnomalyDetector(monitor, &cfg.Anomaly, alerter, cfg.Namespaces)
 		go detector.Run(ctx)
 	}
 

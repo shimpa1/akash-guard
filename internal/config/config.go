@@ -60,7 +60,8 @@ type EmailConfig struct {
 }
 
 type NamespacesConfig struct {
-	Whitelist []string `yaml:"whitelist"`
+	Whitelist      []string `yaml:"whitelist"`
+	MonitorPattern string   `yaml:"monitor_pattern"` // if set, only alert on namespaces matching this regex
 }
 
 // duration is a yaml-deserializable time.Duration
