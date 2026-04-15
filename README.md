@@ -378,6 +378,65 @@ All channels (webhook, email, log) use the same JSON structure:
 
 ## Verification
 
+### Automated: trigger-tester deployment
+
+The easiest way to verify all 4 detection signals at once is to deploy the
+trigger-tester SDL to the provider under test:
+
+```yaml
+# deploy/test/trigger-tester.yaml
+version: "2.0"
+
+services:
+  guard-tester:
+    image: shimpa/akash-guard-tester:latest
+    expose:
+      - port: 8080
+        as: 80
+        to:
+          - global: true
+
+profiles:
+  compute:
+    guard-tester:
+      resources:
+        cpu:
+          units: 0.5
+        memory:
+          size: 256Mi
+        storage:
+          - size: 512Mi
+  placement:
+    akash:
+      pricing:
+        guard-tester:
+          denom: uact
+          amount: 10000
+
+deployment:
+  guard-tester:
+    akash:
+      profile: guard-tester
+      count: 1
+```
+
+The container runs four tests sequentially (15-second gaps between each to land in separate 10-second anomaly windows):
+
+| Step | Signal | Method |
+|------|--------|--------|
+| 1 | `port25_egress` | 30 TCP connections to port 25 on RFC 5737 IPs |
+| 2 | `high_unique_dst_ips` | `nmap` ping sweep of 768 RFC 5737 IPs |
+| 3 | `high_syn_rate` | `hping3 --syn --flood` to 8.8.8.8:80 for 5s |
+| 4 | `high_pps` | `hping3 --udp --flood -d 40` to 8.8.8.8:53 for 5s |
+
+Watch for all four alert lines within ~90 seconds of deployment:
+
+```bash
+kubectl -n kube-system logs -l app=akash-guard -f | grep "anomaly:"
+```
+
+### Manual checks
+
 After deploying to a test provider, run through these checks:
 
 **Threat Intel — policy creation**
@@ -441,11 +500,19 @@ akash-guard/
 │   ├── cert-manager/
 │   │   ├── install.sh            # Idempotent cert-manager installer
 │   │   └── cluster-issuer.yaml   # Let's Encrypt staging + prod ClusterIssuers
-│   └── logging/
-│       ├── install.sh            # Installs Loki + Fluent Bit + Grafana via Helm
-│       ├── loki-values.yaml      # Loki single-binary, filesystem storage
-│       ├── fluent-bit-values.yaml # Fluent Bit with k8s metadata enrichment
-│       └── grafana-values.yaml   # Grafana with pre-provisioned dashboard
+│   ├── logging/
+│   │   ├── install.sh            # Installs Loki + Fluent Bit + Grafana via Helm
+│   │   ├── loki-values.yaml      # Loki single-binary, filesystem storage
+│   │   ├── fluent-bit-values.yaml # Fluent Bit with k8s metadata enrichment
+│   │   ├── grafana-values.yaml   # Grafana with pre-provisioned dashboard
+│   │   └── grafana-integration/  # For clusters with existing kube-prometheus-stack Grafana
+│   │       ├── install.sh        # Applies loki-datasource.yaml + dashboard.yaml
+│   │       ├── loki-datasource.yaml  # ConfigMap labeled grafana_datasource=1
+│   │       └── dashboard.yaml    # ConfigMap labeled grafana_dashboard=1
+│   └── test/
+│       ├── Dockerfile            # Builds shimpa/akash-guard-tester:latest
+│       ├── entrypoint.sh         # Test script: triggers all 4 detection signals
+│       └── trigger-tester.yaml   # Akash SDL for the tester deployment
 ├── internal/
 │   ├── alerting/
 │   │   └── alerting.go      # Unified alerter: log, Prometheus, webhook, email
@@ -477,6 +544,7 @@ akash-guard/
 | `make push` | Push image from `DEV_VM` to registry. |
 | `make cert-manager-deploy` | Install cert-manager v1.14.5 and Let's Encrypt ClusterIssuers. Run once before `logging-deploy`. |
 | `make logging-deploy` | Deploy Loki + Fluent Bit + Grafana to the current kubectl context. Requires cert-manager. |
+| `make grafana-integration-deploy` | Inject Loki datasource + akash-guard dashboard into an existing kube-prometheus-stack Grafana. |
 | `make clean` | Remove local build artefacts and remote temp directory. |
 | `make all` | `generate` + `build`. |
 
@@ -516,16 +584,24 @@ An optional but recommended observability stack is included in `deploy/logging/`
 | Grafana | grafana/grafana | 8.4.1 | Dashboard, pre-provisioned datasource |
 | cert-manager | jetstack/cert-manager | 1.14.5 | TLS certificates via Let's Encrypt |
 
-The Grafana dashboard at `https://grafana.europlots.net` shows:
+The Grafana dashboard shows:
 - Live abuse alert log stream
 - Alert rate by type and by namespace
 - Per-signal stat counters (high PPS, high SYN rate, high unique DST IPs, port 25, threat intel hits)
 
-Deploy:
+**Option A — standalone Grafana** (provider has no existing Grafana):
 ```bash
 make cert-manager-deploy   # one-time: installs cert-manager + ClusterIssuers
 make logging-deploy        # installs Loki + Fluent Bit + Grafana
 ```
+
+**Option B — existing kube-prometheus-stack Grafana** (provider already has Grafana):
+```bash
+make logging-deploy        # installs Loki + Fluent Bit only
+make grafana-integration-deploy  # injects Loki datasource + dashboard into existing Grafana
+```
+
+`grafana-integration-deploy` applies two labeled ConfigMaps to the `monitoring` namespace. The `grafana-sc-datasources` and `grafana-sc-dashboard` sidecars included in kube-prometheus-stack pick these up and hot-reload them into Grafana without a pod restart.
 
 ---
 

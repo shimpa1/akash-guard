@@ -89,7 +89,7 @@ A full observability stack is available in `deploy/logging/`:
 - **Fluent Bit** — DaemonSet log collector; ships akash-guard logs to Loki with k8s metadata labels
 - **Grafana** — pre-provisioned with Loki datasource and akash-guard abuse detection dashboard
 
-Grafana is exposed at `https://grafana.europlots.net` (admin / akash-guard) via ingress-nginx + cert-manager Let's Encrypt TLS.
+Grafana is exposed via ingress-nginx + cert-manager Let's Encrypt TLS. Configure the hostname in `deploy/logging/grafana-values.yaml`.
 
 Deploy order — standalone Grafana:
 ```bash
