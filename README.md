@@ -59,27 +59,29 @@ All channels fire simultaneously on every detection event:
 ## Architecture
 
 ```
-Provider Node (DaemonSet — one pod per node)
+Cluster
 │
-├── Threat Intel Engine
-│   ├── Feed fetcher — HTTP, runs on refresh_interval
-│   ├── IP deduplicator
-│   └── Calico GlobalNetworkPolicy writer (Log + Deny rules)
+├── Leader Pod (one per cluster — elected via coordination.k8s.io Lease)
+│   └── Threat Intel Engine
+│       ├── Feed fetcher — HTTP, runs on refresh_interval
+│       ├── IP deduplicator
+│       └── Calico GlobalNetworkPolicy writer (Log + Deny + catch-all Allow)
 │
-├── eBPF Monitor
-│   ├── TC ingress hook on host-side cali interfaces (captures pod-originated traffic)
-│   ├── Per-CPU hash map — packet/SYN/port25 counters per ifindex
-│   ├── Ring buffer — per-packet dst IP events
-│   └── Veth watcher — polls /sys/class/net every 5s, auto-attaches/detaches
-│
-├── Anomaly Detector
-│   └── Window evaluator — reads snapshots, fires alerts, resets counters
-│
-└── Alerting Layer
-    ├── Prometheus /metrics endpoint
-    ├── Structured JSON logger (slog)
-    ├── Webhook sender
-    └── SMTP email sender
+└── Every Node (DaemonSet — one pod per node, regardless of leader status)
+    ├── eBPF Monitor
+    │   ├── TC ingress hook on host-side cali interfaces (captures pod-originated traffic)
+    │   ├── Per-CPU hash map — packet/SYN/port25 counters per ifindex
+    │   ├── Ring buffer — per-packet dst IP events
+    │   └── Veth watcher — polls /sys/class/net every 5s, auto-attaches/detaches
+    │
+    ├── Anomaly Detector
+    │   └── Window evaluator — reads snapshots, fires alerts, resets counters
+    │
+    └── Alerting Layer
+        ├── Prometheus /metrics endpoint
+        ├── Structured JSON logger (slog)
+        ├── Webhook sender
+        └── SMTP email sender
 ```
 
 ---
@@ -130,8 +132,10 @@ kubectl -n kube-system logs -l app=akash-guard
 
 On a healthy deployment you should see within ~10 seconds:
 ```json
-{"level":"INFO","msg":"threat intel feeds fetched","total_entries":1596}
-{"level":"INFO","msg":"created Calico GlobalNetworkPolicy","name":"akash-guard-threatintel-egress-deny","entries":1596}
+{"level":"INFO","msg":"became leader, starting threat intel engine","identity":"akash-guard-xxxxx"}
+{"level":"INFO","msg":"threat intel feeds fetched","total_entries":1595}
+{"level":"INFO","msg":"updated Calico GlobalNetworkPolicy","name":"akash-guard-threatintel-egress-deny","entries":1595}
+{"level":"INFO","msg":"attached TC egress hook","iface":"caliXXXX","namespace":"tenant-abc123","pod":"web-6d4f8b-xk2pz"}
 ```
 
 ---
@@ -227,6 +231,13 @@ anomaly:
     # SYN packets per second from a single namespace before alerting.
     syn_rate: 1000
 
+    # high_pps only fires when the average packet size is below this threshold (bytes).
+    # Legitimate bulk transfers (downloads, AI model pulls) send large packets near MTU
+    # (~1400 bytes) and would otherwise generate false positives at gigabit speeds.
+    # Flood/amplification attacks use small packets (40–100 bytes).
+    # Set to 0 to disable the size guard and fire on pps alone.
+    min_packet_bytes: 300
+
 alerting:
   prometheus:
     enabled: true
@@ -249,11 +260,15 @@ alerting:
       - provider-admin@example.com
 
 namespaces:
-  # Namespaces listed here are never alerted on.
-  # Add system namespaces that legitimately generate high traffic.
-  whitelist:
-    - kube-system
-    - calico-system
+  # If set, the anomaly detector only alerts on namespaces matching this regex.
+  # Everything else is silently skipped — no need to whitelist system namespaces.
+  # On Akash providers, tenant workload namespaces are 45-char lowercase alphanumeric
+  # lease IDs. This pattern scopes alerts to those namespaces only.
+  # Leave empty to monitor all namespaces.
+  monitor_pattern: "^[a-z0-9]{45}$"
+
+  # Explicit per-namespace exclusions within the matched set.
+  whitelist: []
 ```
 
 ---
@@ -271,6 +286,7 @@ kubectl apply -f deploy/rbac.yaml
 The ClusterRole grants:
 - `get/list/watch` on `nodes` and `pods` (for veth → namespace/pod resolution)
 - `get/list/watch/create/update/patch/delete` on Calico `GlobalNetworkPolicy` CRDs
+- `get/create/update` on `coordination.k8s.io/leases` (leader election)
 
 ### 2. Configure and apply the ConfigMap
 
@@ -419,9 +435,17 @@ akash-guard/
 │   └── akash-guard/
 │       └── main.go          # Entry point: wires all components together
 ├── deploy/
-│   ├── configmap.yaml       # Default configuration
-│   ├── daemonset.yaml       # DaemonSet with required capabilities
-│   └── rbac.yaml            # ServiceAccount, ClusterRole, ClusterRoleBinding
+│   ├── configmap.yaml            # Default configuration
+│   ├── daemonset.yaml            # DaemonSet with required capabilities
+│   ├── rbac.yaml                 # ServiceAccount, ClusterRole, ClusterRoleBinding
+│   ├── cert-manager/
+│   │   ├── install.sh            # Idempotent cert-manager installer
+│   │   └── cluster-issuer.yaml   # Let's Encrypt staging + prod ClusterIssuers
+│   └── logging/
+│       ├── install.sh            # Installs Loki + Fluent Bit + Grafana via Helm
+│       ├── loki-values.yaml      # Loki single-binary, filesystem storage
+│       ├── fluent-bit-values.yaml # Fluent Bit with k8s metadata enrichment
+│       └── grafana-values.yaml   # Grafana with pre-provisioned dashboard
 ├── internal/
 │   ├── alerting/
 │   │   └── alerting.go      # Unified alerter: log, Prometheus, webhook, email
@@ -451,6 +475,8 @@ akash-guard/
 | `make build` | Cross-compile `linux/amd64` binary to `bin/akash-guard`. No VM needed. |
 | `make docker` | Build container image on `DEV_VM`. |
 | `make push` | Push image from `DEV_VM` to registry. |
+| `make cert-manager-deploy` | Install cert-manager v1.14.5 and Let's Encrypt ClusterIssuers. Run once before `logging-deploy`. |
+| `make logging-deploy` | Deploy Loki + Fluent Bit + Grafana to the current kubectl context. Requires cert-manager. |
 | `make clean` | Remove local build artefacts and remote temp directory. |
 | `make all` | `generate` + `build`. |
 
@@ -463,11 +489,51 @@ make generate DEV_USER=ubuntu
 
 ---
 
+## Multi-Node Clusters
+
+`akash-guard` is designed for multi-node providers:
+
+- **eBPF anomaly detection** is inherently per-node. Each DaemonSet pod attaches TC hooks only to its own node's pod interfaces and fires alerts for local traffic. No coordination needed.
+- **Threat intel policy** is cluster-scoped (a single Calico `GlobalNetworkPolicy`). To avoid N nodes racing to write the same policy, leader election ensures only one pod writes it at a time. On leadership change, the policy stays in place; the new leader wins within 15 seconds and immediately refreshes it.
+- **Prometheus metrics** are per-node. Configure your scraper to collect from all DaemonSet pods (the `prometheus.io/scrape` annotation is already set).
+
+Verify leader election on a running cluster:
+```bash
+kubectl -n kube-system get lease akash-guard-leader
+kubectl -n kube-system logs -l app=akash-guard | grep "became leader\|new threat intel leader"
+```
+
+---
+
+## Logging Stack
+
+An optional but recommended observability stack is included in `deploy/logging/` and `deploy/cert-manager/`:
+
+| Component | Chart | Version | Purpose |
+|---|---|---|---|
+| Loki | grafana/loki | 6.6.3 | Log aggregation, 30-day retention |
+| Fluent Bit | fluent/fluent-bit | 0.47.10 | Log collection from all nodes |
+| Grafana | grafana/grafana | 8.4.1 | Dashboard, pre-provisioned datasource |
+| cert-manager | jetstack/cert-manager | 1.14.5 | TLS certificates via Let's Encrypt |
+
+The Grafana dashboard at `https://grafana.europlots.net` shows:
+- Live abuse alert log stream
+- Alert rate by type and by namespace
+- Per-signal stat counters (high PPS, high SYN rate, high unique DST IPs, port 25, threat intel hits)
+
+Deploy:
+```bash
+make cert-manager-deploy   # one-time: installs cert-manager + ClusterIssuers
+make logging-deploy        # installs Loki + Fluent Bit + Grafana
+```
+
+---
+
 ## Limitations and Known Issues
 
 - **`kernel.unprivileged_bpf_disabled=2`**: Akash provider nodes restrict BPF to root. The DaemonSet must run as uid 0 with `privileged: true`. The published image uses the distroless root variant.
 - **`AttachTCX` requires kernel ≥ 6.6**: If the provider node runs an older kernel, TC hook attachment will fail. Legacy `tc filter` attachment can be substituted in `loader.go`.
 - **IPv4 only**: The eBPF hook currently tracks IPv4 egress only. IPv6 support is planned.
-- **veth resolution**: Namespace/pod name resolution is best-effort. If a pod's IP has not yet appeared in the k8s API when the veth is first seen, the interface is recorded as `unknown`. It will be resolved on the next 5-second watcher tick once the pod IP is available.
+- **veth resolution**: If a pod's IP has not yet appeared in the k8s API when its cali interface is first seen, the interface is recorded as `unknown`. It is automatically re-resolved on the next 5-second watcher tick once the pod IP becomes available.
 - **Threat intel feeds**: Spamhaus feeds may require a paid subscription for high-volume or commercial use. See their [terms of service](https://www.spamhaus.org/organization/dnsblusage/).
 - **No automatic enforcement**: By design. Providers must act on alerts manually or integrate with their own automation.
