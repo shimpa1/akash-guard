@@ -9,7 +9,7 @@ PLATFORM  ?= linux/amd64
 DEV_USER   ?= $(USER)
 REMOTE_DIR := /tmp/akash-guard-bpf
 
-.PHONY: all generate build docker push clean logging-deploy cert-manager-deploy _require-dev-vm
+.PHONY: all generate build docker push clean logging-deploy grafana-integration-deploy cert-manager-deploy _require-dev-vm
 
 all: generate build
 
@@ -45,6 +45,12 @@ cert-manager-deploy:
 ## Requires cert-manager-deploy to have run first for TLS to work.
 logging-deploy:
 	bash deploy/logging/install.sh
+
+## grafana-integration-deploy: inject Loki datasource + akash-guard dashboard into an existing
+## kube-prometheus-stack Grafana. Use this instead of logging-deploy when the cluster already
+## has Grafana running (e.g. production clusters with kube-prometheus-stack installed).
+grafana-integration-deploy:
+	bash deploy/logging/grafana-integration/install.sh
 
 clean:
 	rm -rf bin/
