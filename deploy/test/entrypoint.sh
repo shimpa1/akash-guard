@@ -47,4 +47,7 @@ echo "  anomaly: high SYN rate"
 echo "  anomaly: high PPS"
 echo ""
 echo "Sleeping to keep lease alive for log inspection."
-sleep infinity
+# Akash requires at least one globally exposed port — serve a minimal HTTP response on 8080.
+while true; do
+    echo -e "HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nOK\n" | nc -l -p 8080 -q 1 2>/dev/null || true
+done

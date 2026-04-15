@@ -18,6 +18,11 @@ version: "2.0"
 services:
   guard-tester:
     image: shimpa/akash-guard-tester:latest
+    expose:
+      - port: 8080
+        as: 80
+        to:
+          - global: true
 
 profiles:
   compute:
@@ -33,8 +38,8 @@ profiles:
     akash:
       pricing:
         guard-tester:
-          denom: uakt
-          amount: 100
+          denom: uact
+          amount: 10000
 
 deployment:
   guard-tester:
