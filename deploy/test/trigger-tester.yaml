@@ -1,88 +1,23 @@
 ---
 # akash-guard trigger tester
 #
-# Deploys a container that intentionally generates traffic matching every
-# akash-guard detection signal. Use this to verify alerts are firing after
-# deploying akash-guard to a provider.
+# Deploys a container that intentionally triggers all 4 akash-guard detection
+# signals. Use this to verify alerts are firing after deploying akash-guard.
 #
 # Detection signals triggered (default thresholds, 10s window):
-#   port25_egress       — >20 TCP SYNs to port 25                (test: 30 connections)
-#   high_unique_dst_ips — >500 unique destination IPs             (test: 768 IPs via nmap)
-#   high_syn_rate       — >1000 SYN/sec                          (test: hping3 SYN flood)
-#   high_pps            — >10000 pps, avg packet < 300 bytes     (test: hping3 UDP flood, 68-byte packets)
+#   port25_egress       — >20 TCP connections to port 25         (test: 30)
+#   high_unique_dst_ips — >500 unique destination IPs            (test: 768 via nmap)
+#   high_syn_rate       — >1000 SYN/sec                         (test: hping3 SYN flood)
+#   high_pps            — >10000 pps, avg packet < 300 bytes    (test: hping3 UDP flood)
 #
-# All tests use RFC 5737 documentation IPs (192.0.2.0/24, 198.51.100.0/24,
-# 203.0.113.0/24) or 8.8.8.8 where flood volume is needed. The eBPF TC hook
-# captures packets before they leave the host, so the alerts fire regardless
-# of whether packets reach their destination.
-#
-# Usage:
-#   provider-services tx deployment create --dseq <n> deploy/test/trigger-tester.yaml
-#
-# Watch for alerts:
+# Watch for alerts after deploying:
 #   kubectl -n kube-system logs -l app=akash-guard -f | grep "anomaly:"
 
 version: "2.0"
 
 services:
   guard-tester:
-    image: nicolaka/netshoot:latest
-    command:
-      - /bin/bash
-      - -c
-      - |
-        echo "=== akash-guard trigger tester ==="
-        echo "Signals: port25_egress, high_unique_dst_ips, high_syn_rate, high_pps"
-        echo ""
-
-        # ---- 1. port25_egress -----------------------------------------------
-        # Threshold: >20 connections to port 25 in a 10s window.
-        # Opens 30 TCP connections to port 25 on 203.0.113.1–.30.
-        # The eBPF hook counts SYN packets to port 25 at the cali interface.
-        echo "[1/4] port25_egress: 30 TCP connections to port 25..."
-        for i in $(seq 1 30); do
-          (echo QUIT | timeout 2 nc -w1 203.0.113.$i 25 2>/dev/null || true) &
-        done
-        wait
-        echo "      done. Waiting for window reset..."
-        sleep 15
-
-        # ---- 2. high_unique_dst_ips ------------------------------------------
-        # Threshold: >500 unique destination IPs in a 10s window.
-        # nmap ping sweep across 3 RFC 5737 /24s = 768 unique IPs, all probed
-        # within a second at --min-rate 5000.
-        echo "[2/4] high_unique_dst_ips: nmap sweep of 768 documentation IPs..."
-        nmap -sn --max-retries 0 --host-timeout 50ms --min-rate 5000 \
-          192.0.2.0/24 198.51.100.0/24 203.0.113.0/24 >/dev/null 2>&1 || true
-        echo "      done. Waiting for window reset..."
-        sleep 15
-
-        # ---- 3. high_syn_rate ------------------------------------------------
-        # Threshold: >1000 SYN/sec (10000 SYNs in a 10s window).
-        # hping3 --flood easily reaches 100k+ pps on modern hardware.
-        echo "[3/4] high_syn_rate: hping3 SYN flood → 8.8.8.8:80 for 5 seconds..."
-        timeout 5 hping3 --syn --flood -p 80 8.8.8.8 2>/dev/null || true
-        echo "      done. Waiting for window reset..."
-        sleep 15
-
-        # ---- 4. high_pps (small packets) ------------------------------------
-        # Threshold: >10000 pps AND avg bytes/packet < 300.
-        # -d 40 sets 40-byte data payload → 40+8(UDP)+20(IP) = 68-byte packets,
-        # well below the 300-byte guard. hping3 --flood saturates line rate.
-        echo "[4/4] high_pps: hping3 UDP flood, 68-byte packets → 8.8.8.8:53 for 5 seconds..."
-        timeout 5 hping3 --udp --flood -d 40 -p 53 8.8.8.8 2>/dev/null || true
-        echo "      done."
-
-        echo ""
-        echo "All 4 tests complete."
-        echo "Expected alerts in akash-guard logs:"
-        echo "  anomaly: port 25 egress"
-        echo "  anomaly: high unique dst IPs"
-        echo "  anomaly: high SYN rate"
-        echo "  anomaly: high PPS"
-        echo ""
-        echo "Sleeping to keep lease alive for log inspection."
-        sleep infinity
+    image: shimpa/akash-guard-tester:latest
 
 profiles:
   compute:
