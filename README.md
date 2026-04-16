@@ -114,9 +114,26 @@ apt-get install -y clang llvm libbpf-dev gcc-multilib linux-headers-amd64
 
 ---
 
-## Quick Deploy (pre-built image)
+## Quick Deploy
 
-The fastest path to a running instance:
+### Helm (recommended)
+
+```bash
+git clone https://github.com/shimpa1/akash-guard.git
+cd akash-guard
+helm install akash-guard charts/akash-guard -n kube-system --create-namespace
+```
+
+Override values inline or with a file:
+
+```bash
+helm install akash-guard charts/akash-guard -n kube-system --create-namespace \
+  --set config.anomaly.thresholds.pps=5000 \
+  --set config.alerting.webhook.enabled=true \
+  --set config.alerting.webhook.url=https://hooks.example.com/akash-guard
+```
+
+### Raw manifests (alternative)
 
 ```bash
 kubectl apply -f https://raw.githubusercontent.com/shimpa1/akash-guard/main/deploy/rbac.yaml
@@ -124,7 +141,8 @@ kubectl apply -f https://raw.githubusercontent.com/shimpa1/akash-guard/main/depl
 kubectl apply -f https://raw.githubusercontent.com/shimpa1/akash-guard/main/deploy/daemonset.yaml
 ```
 
-Verify:
+### Verify
+
 ```bash
 kubectl -n kube-system get pods -l app=akash-guard
 kubectl -n kube-system logs -l app=akash-guard
@@ -275,40 +293,39 @@ namespaces:
 
 ## Deployment
 
-### 1. Apply RBAC
+### Helm (recommended)
 
-Creates a `ServiceAccount`, `ClusterRole`, and `ClusterRoleBinding` in `kube-system`:
+```bash
+# First install
+helm install akash-guard charts/akash-guard -n kube-system --create-namespace
+
+# Update configuration — pods restart automatically when config changes
+helm upgrade akash-guard charts/akash-guard -n kube-system -f my-values.yaml
+
+# Remove
+helm uninstall akash-guard -n kube-system
+```
+
+Makefile shortcuts:
+
+```bash
+make helm-install                          # install with default values
+make helm-install HELM_VALUES=prod.yaml    # install with custom values
+make helm-upgrade HELM_VALUES=prod.yaml    # upgrade
+make helm-uninstall                        # remove
+```
+
+### Raw manifests (alternative)
 
 ```bash
 kubectl apply -f deploy/rbac.yaml
-```
-
-The ClusterRole grants:
-- `get/list/watch` on `nodes` and `pods` (for veth → namespace/pod resolution)
-- `get/list/watch/create/update/patch/delete` on Calico `GlobalNetworkPolicy` CRDs
-- `get/create/update` on `coordination.k8s.io/leases` (leader election)
-
-### 2. Configure and apply the ConfigMap
-
-Edit `deploy/configmap.yaml` with your desired thresholds and alert destinations, then apply:
-
-```bash
 kubectl apply -f deploy/configmap.yaml
-```
-
-### 3. Deploy the DaemonSet
-
-```bash
 kubectl apply -f deploy/daemonset.yaml
 ```
 
-Verify pods are running on all nodes:
+Edit `deploy/configmap.yaml` before applying to set thresholds and alert destinations.
 
-```bash
-kubectl -n kube-system get pods -l app=akash-guard
-```
-
-### 4. Check logs
+### Check logs
 
 ```bash
 kubectl -n kube-system logs -l app=akash-guard -f
@@ -487,6 +504,11 @@ nmap -Pn -sS --min-rate 1000 1.2.3.0/24
 
 ```
 akash-guard/
+├── charts/
+│   └── akash-guard/
+│       ├── Chart.yaml           # Chart metadata
+│       ├── values.yaml          # All config options with defaults
+│       └── templates/           # ServiceAccount, ClusterRole, ClusterRoleBinding, ConfigMap, DaemonSet
 ├── bpf/
 │   ├── tc_egress.c          # eBPF TC egress hook (C source)
 │   └── gen.go               # go:generate directive for bpf2go
@@ -538,6 +560,10 @@ akash-guard/
 
 | Target | Description |
 |---|---|
+| `make helm-install` | Install akash-guard via Helm with default values. |
+| `make helm-install HELM_VALUES=f.yaml` | Install with a custom values file. |
+| `make helm-upgrade HELM_VALUES=f.yaml` | Upgrade an existing release. |
+| `make helm-uninstall` | Remove the Helm release. |
 | `make generate` | Compile `tc_egress.c` → Go bindings on `DEV_VM` via SSH. Requires `DEV_VM` set in `local.mk`. |
 | `make build` | Cross-compile `linux/amd64` binary to `bin/akash-guard`. No VM needed. |
 | `make docker` | Build container image on `DEV_VM`. |
