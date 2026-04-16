@@ -1,0 +1,14 @@
+apiVersion: v2
+name: akash-guard
+description: Provider abuse detection for Akash Network — Threat Intel Blocker and eBPF Anomaly Detector
+type: application
+version: 0.1.0
+appVersion: "latest"
+keywords:
+  - akash
+  - security
+  - ebpf
+  - calico
+home: https://github.com/shimpa1/akash-guard
+sources:
+  - https://github.com/shimpa1/akash-guard

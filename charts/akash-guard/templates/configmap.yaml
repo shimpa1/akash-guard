@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "akash-guard.fullname" . }}-config
+  namespace: {{ include "akash-guard.namespace" . }}
+  labels:
+    {{- include "akash-guard.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    threatintel:
+      refresh_interval: {{ .Values.config.threatintel.refresh_interval }}
+      feeds:
+        {{- range .Values.config.threatintel.feeds }}
+        - {{ . }}
+        {{- end }}
+
+    anomaly:
+      window: {{ .Values.config.anomaly.window }}
+      thresholds:
+        pps: {{ .Values.config.anomaly.thresholds.pps }}
+        unique_dst_ips: {{ .Values.config.anomaly.thresholds.unique_dst_ips }}
+        port25_connections: {{ .Values.config.anomaly.thresholds.port25_connections }}
+        syn_rate: {{ .Values.config.anomaly.thresholds.syn_rate }}
+        min_packet_bytes: {{ .Values.config.anomaly.thresholds.min_packet_bytes }}
+
+    alerting:
+      prometheus:
+        enabled: {{ .Values.config.alerting.prometheus.enabled }}
+        port: {{ .Values.config.alerting.prometheus.port }}
+      webhook:
+        enabled: {{ .Values.config.alerting.webhook.enabled }}
+        url: {{ .Values.config.alerting.webhook.url | quote }}
+      email:
+        enabled: {{ .Values.config.alerting.email.enabled }}
+        smtp_host: {{ .Values.config.alerting.email.smtp_host | quote }}
+        smtp_port: {{ .Values.config.alerting.email.smtp_port }}
+        username: {{ .Values.config.alerting.email.username | quote }}
+        password: {{ .Values.config.alerting.email.password | quote }}
+        from: {{ .Values.config.alerting.email.from | quote }}
+        to:
+          {{- if .Values.config.alerting.email.to }}
+          {{- range .Values.config.alerting.email.to }}
+          - {{ . | quote }}
+          {{- end }}
+          {{- else }}
+          []
+          {{- end }}
+
+    namespaces:
+      monitor_pattern: {{ .Values.config.namespaces.monitor_pattern | quote }}
+      whitelist:
+        {{- if .Values.config.namespaces.whitelist }}
+        {{- range .Values.config.namespaces.whitelist }}
+        - {{ . | quote }}
+        {{- end }}
+        {{- else }}
+        []
+        {{- end }}
