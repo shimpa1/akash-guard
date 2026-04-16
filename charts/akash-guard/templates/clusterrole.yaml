@@ -1,0 +1,19 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "akash-guard.fullname" . }}
+  labels:
+    {{- include "akash-guard.labels" . | nindent 4 }}
+rules:
+  # Read nodes and pods to resolve veth → namespace/pod mappings
+  - apiGroups: [""]
+    resources: ["nodes", "pods"]
+    verbs: ["get", "list", "watch"]
+  # Manage Calico GlobalNetworkPolicy CRDs
+  - apiGroups: ["crd.projectcalico.org"]
+    resources: ["globalnetworkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Leader election — create and renew a Lease object
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update"]

@@ -9,7 +9,7 @@ PLATFORM  ?= linux/amd64
 DEV_USER   ?= $(USER)
 REMOTE_DIR := /tmp/akash-guard-bpf
 
-.PHONY: all generate build docker push clean logging-deploy grafana-integration-deploy cert-manager-deploy _require-dev-vm
+.PHONY: all generate build docker push clean logging-deploy grafana-integration-deploy cert-manager-deploy helm-install helm-upgrade helm-uninstall _require-dev-vm
 
 all: generate build
 
@@ -51,6 +51,28 @@ logging-deploy:
 ## has Grafana running (e.g. production clusters with kube-prometheus-stack installed).
 grafana-integration-deploy:
 	bash deploy/logging/grafana-integration/install.sh
+
+## helm-install: install akash-guard via Helm (first time).
+## Override values with: make helm-install HELM_VALUES=my-values.yaml
+HELM_RELEASE ?= akash-guard
+HELM_NAMESPACE ?= kube-system
+HELM_VALUES ?=
+_helm_values_flag = $(if $(HELM_VALUES),-f $(HELM_VALUES),)
+
+helm-install:
+	helm install $(HELM_RELEASE) charts/akash-guard \
+		--namespace $(HELM_NAMESPACE) --create-namespace \
+		$(_helm_values_flag)
+
+## helm-upgrade: upgrade an existing akash-guard Helm release.
+helm-upgrade:
+	helm upgrade $(HELM_RELEASE) charts/akash-guard \
+		--namespace $(HELM_NAMESPACE) \
+		$(_helm_values_flag)
+
+## helm-uninstall: remove the akash-guard Helm release.
+helm-uninstall:
+	helm uninstall $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
 
 clean:
 	rm -rf bin/

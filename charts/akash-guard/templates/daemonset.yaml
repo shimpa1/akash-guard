@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "akash-guard.fullname" . }}
+  namespace: {{ include "akash-guard.namespace" . }}
+  labels:
+    {{- include "akash-guard.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "akash-guard.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "akash-guard.selectorLabels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.config.alerting.prometheus.port | quote }}
+        prometheus.io/path: "/metrics"
+        # Force pod restart when config changes
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "akash-guard.fullname" . }}
+      hostNetwork: true
+      hostPID: true
+      tolerations:
+        - operator: Exists
+          effect: NoSchedule
+        - operator: Exists
+          effect: NoExecute
+      containers:
+        - name: akash-guard
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: AKASH_GUARD_CONFIG
+              value: /etc/akash-guard/config.yaml
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          volumeMounts:
+            - name: config
+              mountPath: /etc/akash-guard
+              readOnly: true
+            - name: sys
+              mountPath: /sys
+              readOnly: true
+            - name: netns
+              mountPath: /var/run/netns
+              readOnly: true
+          securityContext:
+            privileged: true
+            runAsUser: 0
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.config.alerting.prometheus.port }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.config.alerting.prometheus.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.config.alerting.prometheus.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "akash-guard.fullname" . }}-config
+        - name: sys
+          hostPath:
+            path: /sys
+        - name: netns
+          hostPath:
+            path: /var/run/netns
