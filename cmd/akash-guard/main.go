@@ -14,6 +14,7 @@ import (
 	"github.com/shimpa1/akash-guard/internal/alerting"
 	"github.com/shimpa1/akash-guard/internal/config"
 	ebpfmon "github.com/shimpa1/akash-guard/internal/ebpf"
+	"github.com/shimpa1/akash-guard/internal/enforcement"
 	"github.com/shimpa1/akash-guard/internal/threatintel"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/dynamic"
@@ -81,7 +82,8 @@ func main() {
 		slog.Warn("eBPF monitor load failed — anomaly detection disabled", "err", err)
 	} else {
 		go monitor.Run(ctx)
-		detector := ebpfmon.NewAnomalyDetector(monitor, &cfg.Anomaly, alerter, cfg.Namespaces)
+		enforcer := enforcement.New(cfg.Enforcement, monitor.RateLimitMap())
+		detector := ebpfmon.NewAnomalyDetector(monitor, &cfg.Anomaly, alerter, cfg.Namespaces, enforcer)
 		go detector.Run(ctx)
 	}
 

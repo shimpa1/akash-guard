@@ -8,6 +8,7 @@ import (
 
 	"github.com/shimpa1/akash-guard/internal/alerting"
 	"github.com/shimpa1/akash-guard/internal/config"
+	"github.com/shimpa1/akash-guard/internal/enforcement"
 )
 
 // AnomalyDetector reads snapshots from the Monitor on each window tick,
@@ -16,6 +17,7 @@ type AnomalyDetector struct {
 	monitor        *Monitor
 	cfg            *config.AnomalyConfig
 	alerter        *alerting.Alerter
+	enforcer       *enforcement.Enforcer
 	whitelist      map[string]struct{}
 	monitorPattern *regexp.Regexp // if non-nil, only alert on matching namespaces
 }
@@ -25,6 +27,7 @@ func NewAnomalyDetector(
 	cfg *config.AnomalyConfig,
 	alerter *alerting.Alerter,
 	nsCfg config.NamespacesConfig,
+	enforcer *enforcement.Enforcer,
 ) *AnomalyDetector {
 	wl := make(map[string]struct{}, len(nsCfg.Whitelist))
 	for _, ns := range nsCfg.Whitelist {
@@ -42,6 +45,7 @@ func NewAnomalyDetector(
 		monitor:        monitor,
 		cfg:            cfg,
 		alerter:        alerter,
+		enforcer:       enforcer,
 		whitelist:      wl,
 		monitorPattern: pat,
 	}
@@ -60,6 +64,11 @@ func (d *AnomalyDetector) Run(ctx context.Context) {
 			d.evaluate()
 		}
 	}
+}
+
+func (d *AnomalyDetector) enforce(namespace string) {
+	ifindices := d.monitor.IfindicesForNamespace(namespace)
+	d.enforcer.RateLimit(namespace, ifindices)
 }
 
 func (d *AnomalyDetector) evaluate() {
@@ -100,6 +109,7 @@ func (d *AnomalyDetector) evaluate() {
 				Value:     pps,
 				Threshold: t.PPS,
 			})
+			d.enforce(s.Namespace)
 		}
 
 		uniqueDst := uint64(len(s.UniqueDstIPs))
@@ -113,6 +123,7 @@ func (d *AnomalyDetector) evaluate() {
 				Value:     uniqueDst,
 				Threshold: t.UniqueDstIPs,
 			})
+			d.enforce(s.Namespace)
 		}
 
 		if s.Port25Conns > t.Port25Conns {
@@ -125,6 +136,7 @@ func (d *AnomalyDetector) evaluate() {
 				Value:     s.Port25Conns,
 				Threshold: t.Port25Conns,
 			})
+			d.enforce(s.Namespace)
 		}
 
 		synRate := s.SYNPackets / windowSec
@@ -138,6 +150,7 @@ func (d *AnomalyDetector) evaluate() {
 				Value:     synRate,
 				Threshold: t.SYNRate,
 			})
+			d.enforce(s.Namespace)
 		}
 	}
 

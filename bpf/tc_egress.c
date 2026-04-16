@@ -34,6 +34,27 @@ struct {
     __uint(max_entries, 4096);
 } counters SEC(".maps");
 
+// Token-bucket state for per-interface rate limiting.
+// Written by the Go-side Enforcer when a namespace exceeds a detection threshold;
+// deleted when the cooldown expires. Lock must be the first field.
+struct ratelimit_state {
+    struct bpf_spin_lock lock;  // 4 bytes — must be first
+    __u32  _pad;                // align following fields to 8-byte boundary
+    __u64  tokens;              // current token count (bytes)
+    __u64  last_ns;             // timestamp of last token refill (bpf_ktime_get_ns)
+    __u64  rate_bps;            // allowed throughput in bytes/second
+    __u64  burst;               // maximum token accumulation (bytes)
+};
+
+// Map: ifindex → ratelimit_state.
+// BPF_MAP_TYPE_HASH is required for maps with bpf_spin_lock values.
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __type(key, ifindex_t);
+    __type(value, struct ratelimit_state);
+    __uint(max_entries, 4096);
+} iface_ratelimit SEC(".maps");
+
 // Perf event map for sending per-packet events to userspace (dst IP tracking).
 struct pkt_event {
     __u32 ifindex;
@@ -113,6 +134,41 @@ emit:;
         ev->dst_port = dst_port;
         ev->tcp_flags = tcp_flags;
         bpf_ringbuf_submit(ev, 0);
+    }
+
+    // eBPF token-bucket rate limiting.
+    // Stats are recorded before this point so detection still fires on abusive
+    // traffic even while it is being rate-limited.
+    // The Go-side Enforcer inserts an entry here when a namespace trips a threshold
+    // and removes it after the cooldown expires.
+    struct ratelimit_state *rl = bpf_map_lookup_elem(&iface_ratelimit, &ifidx);
+    if (rl) {
+        __u64 now = bpf_ktime_get_ns();
+        __u32 pkt_bytes = skb->len;
+        int drop = 0;
+
+        bpf_spin_lock(&rl->lock);
+
+        __u64 elapsed = now - rl->last_ns;
+        if (elapsed > 1000000000ULL)
+            elapsed = 1000000000ULL;            // cap at 1 s to bound token gain and prevent overflow
+        __u64 added   = rl->rate_bps * elapsed / 1000000000ULL;
+        __u64 tokens  = rl->tokens + added;
+        if (tokens > rl->burst)
+            tokens = rl->burst;
+        rl->last_ns = now;
+
+        if (tokens >= pkt_bytes) {
+            rl->tokens = tokens - pkt_bytes;
+        } else {
+            rl->tokens = tokens;
+            drop = 1;
+        }
+
+        bpf_spin_unlock(&rl->lock);
+
+        if (drop)
+            return TC_ACT_SHOT;
     }
 
     return TC_ACT_OK;
