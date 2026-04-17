@@ -70,6 +70,6 @@ config:
     # When enabled, the eBPF TC hook rate-limits the offending interface to
     # rate_limit_bps bytes/sec for the cooldown duration after each alert.
     # Stats recording is unaffected — detection continues while enforcement is active.
-    enabled: false
+    enabled: true
     rate_limit_bps: 1000000  # 1 Mbps
     cooldown: 5m
