@@ -583,6 +583,27 @@ make generate DEV_USER=ubuntu
 
 ---
 
+## Releasing
+
+Releases are published manually via GitHub Actions. To cut a release:
+
+1. Merge all intended changes to `main`.
+2. Go to **Actions → Release → Run workflow** on GitHub.
+3. Enter the version in `vX.Y.Z` format (e.g. `v0.2.0`) and click **Run workflow**.
+
+The workflow will:
+- Build and push the Docker image to `ghcr.io/shimpa1/akash-guard` tagged with the version and `latest`.
+- Package the Helm chart and push it as an OCI artifact to `ghcr.io/shimpa1/charts/akash-guard`.
+- Create a GitHub release with auto-generated notes from merged PRs and the chart `.tgz` attached.
+
+To install a specific released version via Helm OCI:
+
+```bash
+helm install akash-guard oci://ghcr.io/shimpa1/charts/akash-guard --version 0.2.0 -n kube-system
+```
+
+---
+
 ## Multi-Node Clusters
 
 `akash-guard` is designed for multi-node providers:
