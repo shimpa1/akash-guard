@@ -56,3 +56,8 @@ data:
         {{- else }}
         []
         {{- end }}
+
+    enforcement:
+      enabled: {{ .Values.config.enforcement.enabled }}
+      rate_limit_bps: {{ .Values.config.enforcement.rate_limit_bps }}
+      cooldown: {{ .Values.config.enforcement.cooldown }}

@@ -13,6 +13,7 @@ type Config struct {
 	Anomaly     AnomalyConfig     `yaml:"anomaly"`
 	Alerting    AlertingConfig    `yaml:"alerting"`
 	Namespaces  NamespacesConfig  `yaml:"namespaces"`
+	Enforcement EnforcementConfig `yaml:"enforcement"`
 }
 
 type ThreatIntelConfig struct {
@@ -62,6 +63,12 @@ type EmailConfig struct {
 type NamespacesConfig struct {
 	Whitelist      []string `yaml:"whitelist"`
 	MonitorPattern string   `yaml:"monitor_pattern"` // if set, only alert on namespaces matching this regex
+}
+
+type EnforcementConfig struct {
+	Enabled      bool     `yaml:"enabled"`
+	RateLimitBPS uint64   `yaml:"rate_limit_bps"` // bytes per second cap applied to offending interface
+	Cooldown     duration `yaml:"cooldown"`        // how long to hold the rate limit after the last alert
 }
 
 // duration is a yaml-deserializable time.Duration
@@ -117,6 +124,11 @@ func defaults() *Config {
 				Enabled: true,
 				Port:    9090,
 			},
+		},
+		Enforcement: EnforcementConfig{
+			Enabled:      false,
+			RateLimitBPS: 1_000_000, // 1 Mbps
+			Cooldown:     duration{5 * time.Minute},
 		},
 	}
 }

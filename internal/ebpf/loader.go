@@ -381,6 +381,29 @@ func (m *Monitor) Snapshot() []*IfaceStats {
 	return out
 }
 
+// RateLimitMap returns the iface_ratelimit eBPF map so the Enforcer can write
+// rate limit entries directly. Returns nil when eBPF is not loaded.
+func (m *Monitor) RateLimitMap() *ebpf.Map {
+	if m.objs == nil {
+		return nil
+	}
+	return m.objs.IfaceRatelimit
+}
+
+// IfindicesForNamespace returns all currently tracked ifindices that belong to
+// the given namespace. Used by the Enforcer to know which interfaces to rate-limit.
+func (m *Monitor) IfindicesForNamespace(namespace string) []uint32 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var out []uint32
+	for idx, meta := range m.ifaceInfo {
+		if meta.namespace == namespace {
+			out = append(out, idx)
+		}
+	}
+	return out
+}
+
 // ResetWindow clears the per-window state for all tracked interfaces.
 func (m *Monitor) ResetWindow() {
 	m.mu.Lock()
