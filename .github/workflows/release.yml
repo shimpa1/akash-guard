@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. v0.2.0)"
+        required: true
+
+env:
+  IMAGE: ghcr.io/shimpa1/akash-guard
+  CHART_REPO: ghcr.io/shimpa1/charts
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate version format
+        run: |
+          if ! echo "${{ github.event.inputs.version }}" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Version must be in the format vX.Y.Z"
+            exit 1
+          fi
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ env.IMAGE }}:${{ github.event.inputs.version }}
+            ${{ env.IMAGE }}:latest
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Package Helm chart
+        run: |
+          VERSION=${{ github.event.inputs.version }}
+          # Strip leading 'v' for Helm semver
+          CHART_VERSION=${VERSION#v}
+          helm package charts/akash-guard \
+            --version "${CHART_VERSION}" \
+            --app-version "${VERSION}" \
+            --destination /tmp/helm-pkg
+
+      - name: Push Helm chart to OCI registry
+        run: |
+          VERSION=${{ github.event.inputs.version }}
+          CHART_VERSION=${VERSION#v}
+          helm push /tmp/helm-pkg/akash-guard-${CHART_VERSION}.tgz oci://${{ env.CHART_REPO }}
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=${{ github.event.inputs.version }}
+          CHART_VERSION=${VERSION#v}
+
+          gh release create "${VERSION}" \
+            --title "${VERSION}" \
+            --generate-notes \
+            /tmp/helm-pkg/akash-guard-${CHART_VERSION}.tgz
