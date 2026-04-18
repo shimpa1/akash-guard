@@ -127,7 +127,7 @@ func defaults() *Config {
 		},
 		Enforcement: EnforcementConfig{
 			Enabled:      true,
-			RateLimitBPS: 1_000_000, // 1 Mbps
+			RateLimitBPS: 50_000, // 50 kbps
 			Cooldown:     duration{5 * time.Minute},
 		},
 	}
