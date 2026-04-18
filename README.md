@@ -118,6 +118,15 @@ apt-get install -y clang llvm libbpf-dev gcc-multilib linux-headers-amd64
 
 ### Helm (recommended)
 
+Install from the OCI registry — no clone required (requires Helm 3.8+):
+
+```bash
+helm install akash-guard oci://ghcr.io/shimpa1/charts/akash-guard \
+  --version 0.1.1 -n kube-system --create-namespace
+```
+
+Or from a local clone to run the latest unreleased main:
+
 ```bash
 git clone https://github.com/shimpa1/akash-guard.git
 cd akash-guard
@@ -127,10 +136,18 @@ helm install akash-guard charts/akash-guard -n kube-system --create-namespace
 Override values inline or with a file:
 
 ```bash
-helm install akash-guard charts/akash-guard -n kube-system --create-namespace \
+helm install akash-guard oci://ghcr.io/shimpa1/charts/akash-guard \
+  --version 0.1.1 -n kube-system --create-namespace \
   --set config.anomaly.thresholds.pps=5000 \
   --set config.alerting.webhook.enabled=true \
   --set config.alerting.webhook.url=https://hooks.example.com/akash-guard
+```
+
+To upgrade an existing install after a new release:
+
+```bash
+helm upgrade akash-guard oci://ghcr.io/shimpa1/charts/akash-guard \
+  --version <new-version> -n kube-system
 ```
 
 ### Raw manifests (alternative)
@@ -145,16 +162,19 @@ kubectl apply -f https://raw.githubusercontent.com/shimpa1/akash-guard/main/depl
 
 ```bash
 kubectl -n kube-system get pods -l app=akash-guard
-kubectl -n kube-system logs -l app=akash-guard
+kubectl -n kube-system logs -l app=akash-guard --tail=30
 ```
 
-On a healthy deployment you should see within ~10 seconds:
+On a healthy deployment you should see within ~15 seconds:
 ```json
+{"level":"INFO","msg":"akash-guard running"}
+{"level":"INFO","msg":"attached TC egress hook","iface":"caliXXXX","namespace":"tenant-abc123","pod":"web-6d4f8b-xk2pz"}
 {"level":"INFO","msg":"became leader, starting threat intel engine","identity":"akash-guard-xxxxx"}
 {"level":"INFO","msg":"threat intel feeds fetched","total_entries":1595}
 {"level":"INFO","msg":"updated Calico GlobalNetworkPolicy","name":"akash-guard-threatintel-egress-deny","entries":1595}
-{"level":"INFO","msg":"attached TC egress hook","iface":"caliXXXX","namespace":"tenant-abc123","pod":"web-6d4f8b-xk2pz"}
 ```
+
+TC hooks attach to existing pod interfaces within the first few seconds. Leader election (and threat intel) follows ~10 seconds later.
 
 ---
 
